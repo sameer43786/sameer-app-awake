@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sameer App Awake</string>
+    <string name="notification_channel_name">App-aware screen monitoring</string>
+    <string name="notification_channel_description">Shows when Sameer App Awake is monitoring selected applications.</string>
+</resources>

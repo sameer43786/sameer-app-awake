@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_primary">#5557D9</color>
+    <color name="app_background">#F4F7FB</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="surface_muted">#EEF2FF</color>
+    <color name="text_primary">#111827</color>
+    <color name="text_secondary">#64748B</color>
+    <color name="border">#DCE3ED</color>
+    <color name="success">#087A5E</color>
+    <color name="warning">#B45309</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="launcher_background">#4F46E5</color>
+</resources>
