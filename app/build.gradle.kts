@@ -4,14 +4,14 @@ plugins {
 
 android {
     namespace = "com.sameerali.appawake"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.sameerali.appawake"
         minSdk = 29
-        targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 36
+        versionCode = 5
+        versionName = "1.2.2"
     }
 
     buildTypes {
