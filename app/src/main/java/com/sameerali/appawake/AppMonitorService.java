@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.app.usage.UsageEvents;
+import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
@@ -14,16 +15,19 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Continuously identifies the foreground package and holds a screen wake lock only for
- * applications explicitly selected by the user.
+ * Keeps the display awake only while a user-selected app is actually in the foreground.
  *
- * <p>The service never reads screen text, keystrokes, messages, files, or network traffic.</p>
+ * <p>The service is profile-local. A copy running in Pixel Private Space monitors apps in
+ * that same Android profile. It combines UsageEvents lifecycle transitions with a conservative
+ * UsageStats last-visible fallback for Private Space, Chrome, WebAPK and PWA cases.</p>
+ *
  * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
  */
 public final class AppMonitorService extends Service {
@@ -36,35 +40,36 @@ public final class AppMonitorService extends Service {
     public static final String EXTRA_FOREGROUND_PACKAGE = "foreground_package";
     public static final String EXTRA_PROTECTED_PACKAGE = "protected_package";
     public static final String EXTRA_SERVICE_RUNNING = "service_running";
+    public static final String EXTRA_PROTECTION_ACTIVE = "protection_active";
+    public static final String EXTRA_DETECTION_SOURCE = "detection_source";
 
-    private static final String NOTIFICATION_CHANNEL_ID = "app_aware_screen_monitoring";
+    private static final String CHANNEL_ID = "app_aware_screen_monitoring";
     private static final int NOTIFICATION_ID = 3107;
-    private static final long POLL_INTERVAL_MS = 800L;
-    private static final long INITIAL_EVENT_WINDOW_MS = TimeUnit.MINUTES.toMillis(30);
-    private static final long EVENT_QUERY_OVERLAP_MS = 2_000L;
+    private static final long POLL_MS = 500L;
+    private static final long INITIAL_WINDOW_MS = TimeUnit.MINUTES.toMillis(30);
+    private static final long OVERLAP_MS = 2_000L;
+    private static final long STATS_LOOKBACK_MS = TimeUnit.MINUTES.toMillis(10);
+    private static final long FALLBACK_FRESHNESS_MS = 3_000L;
+    private static final long WAKE_MAX_MS = TimeUnit.MINUTES.toMillis(10);
+    private static final long WAKE_RENEW_MS = TimeUnit.MINUTES.toMillis(8);
 
-    /*
-     * A finite wake-lock timeout is a safety net. The service renews it before expiry only
-     * while a selected app remains active. If the process stalls, Android releases it.
-     */
-    private static final long WAKE_LOCK_MAX_HOLD_MS = TimeUnit.MINUTES.toMillis(10);
-    private static final long WAKE_LOCK_RENEW_AFTER_MS = TimeUnit.MINUTES.toMillis(8);
+    private final ForegroundAppTracker tracker = new ForegroundAppTracker();
 
-    private final ForegroundAppTracker foregroundTracker = new ForegroundAppTracker();
-
-    private ScheduledExecutorService scheduler;
     private UsageStatsManager usageStatsManager;
     private PowerManager powerManager;
-    private PowerManager.WakeLock screenWakeLock;
     private NotificationManager notificationManager;
+    private PowerManager.WakeLock wakeLock;
+    private ScheduledExecutorService scheduler;
 
     private volatile long previousQueryEndMs;
-    private volatile long wakeLockAcquiredAtElapsedMs;
-    private volatile String publishedForegroundPackage = "";
-    private volatile String publishedProtectedPackage = "";
-    private volatile boolean foregroundStarted;
+    private volatile long wakeAcquiredElapsedMs;
+    private volatile boolean lastInteractive;
     private volatile boolean stopRequested;
-    private volatile boolean wakeLockUnavailableReported;
+    private volatile boolean foregroundStarted;
+    private volatile String publishedForeground = "";
+    private volatile String publishedProtected = "";
+    private volatile String publishedSource = "";
+    private volatile boolean publishedActive;
 
     @Override
     public void onCreate() {
@@ -73,9 +78,12 @@ public final class AppMonitorService extends Service {
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         createNotificationChannel();
-        createScreenWakeLock();
+        createWakeLock();
+        lastInteractive = powerManager != null && powerManager.isInteractive();
+
         AppPreferences.get(this).edit()
                 .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, true)
+                .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, false)
                 .putString(AppPreferences.KEY_LAST_ERROR, "")
                 .apply();
     }
@@ -95,195 +103,255 @@ public final class AppMonitorService extends Service {
 
         startForegroundCompat(buildNotification("Monitoring selected apps", false));
 
-        if (!validatePrerequisites()) {
-            requestStop(true, "Usage Access or selected apps are missing");
+        if (!prerequisitesReady()) {
+            requestStop(true, "Usage Access or selected apps are missing in this Android profile");
             return START_NOT_STICKY;
         }
 
-        startPollingIfNeeded();
+        startPolling();
         if (ACTION_REFRESH.equals(action)) {
-            // Force a notification and UI refresh even when the foreground package is unchanged.
-            publishedForegroundPackage = "__refresh__";
-            pollForegroundAppSafely();
+            publishedForeground = "__refresh__";
+            publishedProtected = "__refresh__";
+            publishedSource = "__refresh__";
+            pollSafely();
         }
         return START_STICKY;
     }
 
-    private boolean validatePrerequisites() {
-        return PermissionUtils.hasUsageAccess(this)
+    private boolean prerequisitesReady() {
+        return usageStatsManager != null
+                && powerManager != null
+                && wakeLock != null
+                && PermissionUtils.hasUsageAccess(this)
                 && !AppPreferences.selectedPackages(this).isEmpty();
     }
 
-    private void startPollingIfNeeded() {
+    private void startPolling() {
         if (scheduler != null && !scheduler.isShutdown()) {
             return;
         }
-        scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "SameerAppAwake-Monitor");
-            thread.setDaemon(true);
-            return thread;
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "SameerAppAwake-Monitor");
+            t.setDaemon(true);
+            return t;
         });
-        scheduler.scheduleWithFixedDelay(
-                this::pollForegroundAppSafely,
-                0L,
-                POLL_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-        );
+        scheduler.scheduleWithFixedDelay(this::pollSafely, 0L, POLL_MS, TimeUnit.MILLISECONDS);
     }
 
-    private void pollForegroundAppSafely() {
+    private void pollSafely() {
         if (stopRequested) {
             return;
         }
         try {
-            pollForegroundApp();
+            poll();
         } catch (SecurityException error) {
-            saveErrorAndStop("Usage Access was revoked");
+            requestStop(true, "Usage Access was revoked in this Android profile");
         } catch (RuntimeException error) {
-            // Release immediately on an unexpected monitoring failure, then leave a local diagnostic.
-            releaseScreenWakeLock();
+            releaseWakeLock();
             AppPreferences.get(this).edit()
+                    .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, false)
                     .putString(AppPreferences.KEY_LAST_ERROR,
                             "Monitoring error: " + error.getClass().getSimpleName())
                     .apply();
         }
     }
 
-    private void pollForegroundApp() {
-        if (!AppPreferences.monitoringEnabled(this) || !validatePrerequisites()) {
-            saveErrorAndStop("Monitoring prerequisites are no longer available");
+    private void poll() {
+        if (!AppPreferences.monitoringEnabled(this) || !prerequisitesReady()) {
+            requestStop(true, "Monitoring prerequisites are no longer available");
             return;
         }
 
-        long nowMs = System.currentTimeMillis();
-        long beginMs = previousQueryEndMs == 0L
-                ? nowMs - INITIAL_EVENT_WINDOW_MS
-                : Math.max(0L, previousQueryEndMs - EVENT_QUERY_OVERLAP_MS);
+        boolean interactive = powerManager.isInteractive();
+        if (!interactive) {
+            releaseWakeLock();
+            tracker.clear();
+            previousQueryEndMs = 0L;
+            lastInteractive = false;
+            publishStatus("", "", false, "screen-off");
+            return;
+        }
 
-        if (usageStatsManager != null) {
-            UsageEvents usageEvents = usageStatsManager.queryEvents(beginMs, nowMs + 1L);
-            if (usageEvents != null) {
-                UsageEvents.Event event = new UsageEvents.Event();
-                while (usageEvents.hasNextEvent()) {
-                    usageEvents.getNextEvent(event);
-                    int type = event.getEventType();
-                    if (type == UsageEvents.Event.ACTIVITY_RESUMED
-                            || type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                        foregroundTracker.recordResumed(event.getPackageName(), event.getTimeStamp());
-                    }
+        if (!lastInteractive) {
+            tracker.clear();
+            previousQueryEndMs = 0L;
+            lastInteractive = true;
+        }
+
+        long now = System.currentTimeMillis();
+        queryLifecycleEvents(now);
+
+        UsageCandidate candidate = queryMostRecentlyVisible(now);
+        String source = "events";
+        if (candidate != null
+                && candidate.timestampMs > tracker.latestTimestampMs()
+                && now - candidate.timestampMs <= FALLBACK_FRESHNESS_MS) {
+            tracker.recordVisible(candidate.packageName, candidate.timestampMs);
+            source = "last-visible";
+        }
+
+        String currentPackage = tracker.currentPackage();
+        Set<String> selected = AppPreferences.selectedPackages(this);
+        boolean requested = !currentPackage.isEmpty() && selected.contains(currentPackage);
+        boolean active = false;
+
+        if (requested) {
+            active = acquireOrRenewWakeLock();
+        } else {
+            releaseWakeLock();
+        }
+
+        publishStatus(currentPackage, active ? currentPackage : "", active, source);
+    }
+
+    private void queryLifecycleEvents(long now) {
+        long begin = previousQueryEndMs == 0L
+                ? Math.max(0L, now - INITIAL_WINDOW_MS)
+                : Math.max(0L, previousQueryEndMs - OVERLAP_MS);
+
+        UsageEvents events = usageStatsManager.queryEvents(begin, now + 1L);
+        if (events != null) {
+            UsageEvents.Event event = new UsageEvents.Event();
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event);
+                String pkg = event.getPackageName();
+                long ts = event.getTimeStamp();
+                int type = event.getEventType();
+
+                if (type == UsageEvents.Event.ACTIVITY_RESUMED
+                        || type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    tracker.recordResumed(pkg, ts);
+                } else if (type == UsageEvents.Event.ACTIVITY_PAUSED
+                        || type == UsageEvents.Event.ACTIVITY_STOPPED
+                        || type == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    tracker.recordPaused(pkg, ts);
                 }
             }
         }
-        previousQueryEndMs = nowMs;
+        previousQueryEndMs = now;
+    }
 
-        String currentPackage = foregroundTracker.currentPackage();
-        Set<String> selectedPackages = AppPreferences.selectedPackages(this);
-        boolean displayInteractive = powerManager != null && powerManager.isInteractive();
-        boolean protectionRequested = displayInteractive && selectedPackages.contains(currentPackage);
-        boolean protectionActive = false;
-
-        if (protectionRequested) {
-            protectionActive = acquireOrRenewScreenWakeLock();
-            if (!protectionActive && !wakeLockUnavailableReported) {
-                wakeLockUnavailableReported = true;
-                AppPreferences.get(this).edit()
-                        .putString(AppPreferences.KEY_LAST_ERROR,
-                                "This device did not provide a compatible screen wake lock")
-                        .apply();
-            }
-        } else {
-            releaseScreenWakeLock();
+    private UsageCandidate queryMostRecentlyVisible(long now) {
+        List<UsageStats> stats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                Math.max(0L, now - STATS_LOOKBACK_MS),
+                now + 1L
+        );
+        if (stats == null || stats.isEmpty()) {
+            return null;
         }
 
-        publishStatus(currentPackage, protectionActive ? currentPackage : "");
+        UsageCandidate best = null;
+        for (UsageStats usage : stats) {
+            if (usage == null || usage.getPackageName() == null) {
+                continue;
+            }
+            long visible = usage.getLastTimeVisible();
+            if (visible <= 0L) {
+                continue;
+            }
+            if (best == null || visible > best.timestampMs) {
+                best = new UsageCandidate(usage.getPackageName(), visible);
+            }
+        }
+        return best;
+    }
+
+    private static final class UsageCandidate {
+        final String packageName;
+        final long timestampMs;
+
+        UsageCandidate(String packageName, long timestampMs) {
+            this.packageName = packageName;
+            this.timestampMs = timestampMs;
+        }
     }
 
     @SuppressWarnings("deprecation")
-    private void createScreenWakeLock() {
-        if (powerManager == null) {
+    private void createWakeLock() {
+        if (powerManager == null
+                || !powerManager.isWakeLockLevelSupported(PowerManager.SCREEN_DIM_WAKE_LOCK)) {
             return;
         }
-        /*
-         * SCREEN_DIM_WAKE_LOCK is used because this cross-application utility has no activity
-         * window to which FLAG_KEEP_SCREEN_ON can be attached. It prevents sleep but permits
-         * dimming, which reduces power use and OLED wear. It never wakes a manually locked phone.
-         */
-        if (!powerManager.isWakeLockLevelSupported(PowerManager.SCREEN_DIM_WAKE_LOCK)) {
-            return;
-        }
-        screenWakeLock = powerManager.newWakeLock(
+        wakeLock = powerManager.newWakeLock(
                 PowerManager.SCREEN_DIM_WAKE_LOCK,
-                "sameer-app-awake:SelectedAppDisplay"
+                "sameer-app-awake:SelectedAppDisplayProtection"
         );
-        screenWakeLock.setReferenceCounted(false);
+        wakeLock.setReferenceCounted(false);
     }
 
     @SuppressWarnings("WakelockTimeout")
-    private synchronized boolean acquireOrRenewScreenWakeLock() {
-        if (screenWakeLock == null) {
+    private synchronized boolean acquireOrRenewWakeLock() {
+        if (wakeLock == null) {
             return false;
         }
-        long elapsedMs = android.os.SystemClock.elapsedRealtime();
-        boolean renewalDue = screenWakeLock.isHeld()
-                && elapsedMs - wakeLockAcquiredAtElapsedMs >= WAKE_LOCK_RENEW_AFTER_MS;
-        if (renewalDue) {
-            screenWakeLock.release();
+        long elapsed = android.os.SystemClock.elapsedRealtime();
+        if (wakeLock.isHeld() && elapsed - wakeAcquiredElapsedMs >= WAKE_RENEW_MS) {
+            wakeLock.release();
         }
-        if (!screenWakeLock.isHeld()) {
-            screenWakeLock.acquire(WAKE_LOCK_MAX_HOLD_MS);
-            wakeLockAcquiredAtElapsedMs = elapsedMs;
+        if (!wakeLock.isHeld()) {
+            wakeLock.acquire(WAKE_MAX_MS);
+            wakeAcquiredElapsedMs = elapsed;
         }
-        return screenWakeLock.isHeld();
+        return wakeLock.isHeld();
     }
 
-    private synchronized void releaseScreenWakeLock() {
-        if (screenWakeLock != null && screenWakeLock.isHeld()) {
-            screenWakeLock.release();
+    private synchronized void releaseWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
         }
-        wakeLockAcquiredAtElapsedMs = 0L;
+        wakeAcquiredElapsedMs = 0L;
     }
 
-    private void publishStatus(String foregroundPackage, String protectedPackage) {
-        String safeForeground = foregroundPackage == null ? "" : foregroundPackage;
+    private void publishStatus(String foreground, String protectedPackage,
+                               boolean active, String source) {
+        String safeForeground = foreground == null ? "" : foreground;
         String safeProtected = protectedPackage == null ? "" : protectedPackage;
-        boolean changed = !safeForeground.equals(publishedForegroundPackage)
-                || !safeProtected.equals(publishedProtectedPackage);
-        if (!changed) {
+        String safeSource = source == null ? "" : source;
+
+        if (safeForeground.equals(publishedForeground)
+                && safeProtected.equals(publishedProtected)
+                && safeSource.equals(publishedSource)
+                && active == publishedActive) {
             return;
         }
 
-        publishedForegroundPackage = safeForeground;
-        publishedProtectedPackage = safeProtected;
+        publishedForeground = safeForeground;
+        publishedProtected = safeProtected;
+        publishedSource = safeSource;
+        publishedActive = active;
+
         AppPreferences.get(this).edit()
                 .putString(AppPreferences.KEY_LAST_FOREGROUND_PACKAGE, safeForeground)
                 .putString(AppPreferences.KEY_PROTECTED_PACKAGE, safeProtected)
+                .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, active)
+                .putString(AppPreferences.KEY_DETECTION_SOURCE, safeSource)
                 .putLong(AppPreferences.KEY_LAST_STATUS_EPOCH_MS, System.currentTimeMillis())
                 .apply();
 
         if (foregroundStarted && notificationManager != null) {
-            String message = safeProtected.isEmpty()
-                    ? "Monitoring " + AppPreferences.selectedPackages(this).size() + " selected app(s)"
-                    : "Screen awake for " + PermissionUtils.appLabel(this, safeProtected);
-            notificationManager.notify(
-                    NOTIFICATION_ID,
-                    buildNotification(message, !safeProtected.isEmpty())
-            );
+            String text = active
+                    ? "Screen awake for " + PermissionUtils.appLabel(this, safeProtected)
+                    : "Monitoring " + AppPreferences.selectedPackages(this).size() + " selected app(s)";
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(text, active));
         }
 
         Intent status = new Intent(ACTION_STATUS)
                 .setPackage(getPackageName())
                 .putExtra(EXTRA_FOREGROUND_PACKAGE, safeForeground)
                 .putExtra(EXTRA_PROTECTED_PACKAGE, safeProtected)
-                .putExtra(EXTRA_SERVICE_RUNNING, true);
+                .putExtra(EXTRA_SERVICE_RUNNING, true)
+                .putExtra(EXTRA_PROTECTION_ACTIVE, active)
+                .putExtra(EXTRA_DETECTION_SOURCE, safeSource);
         sendBroadcast(status);
     }
 
     private void createNotificationChannel() {
-        if (notificationManager == null) {
+        if (notificationManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
         NotificationChannel channel = new NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
+                CHANNEL_ID,
                 getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW
         );
@@ -292,40 +360,37 @@ public final class AppMonitorService extends Service {
         notificationManager.createNotificationChannel(channel);
     }
 
-    private Notification buildNotification(String message, boolean activelyProtecting) {
+    private Notification buildNotification(String message, boolean active) {
         Intent openIntent = new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent openPendingIntent = PendingIntent.getActivity(
-                this,
-                100,
-                openIntent,
+        PendingIntent openPending = PendingIntent.getActivity(
+                this, 100, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
         Intent stopIntent = new Intent(this, AppMonitorService.class).setAction(ACTION_STOP);
-        PendingIntent stopPendingIntent = PendingIntent.getService(
-                this,
-                101,
-                stopIntent,
+        PendingIntent stopPending = PendingIntent.getService(
+                this, 101, stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Notification.Builder builder = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID);
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
+
         return builder
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(activelyProtecting ? "Display protection active" : "Sameer App Awake is active")
+                .setContentTitle(active ? "Display protection active" : "Sameer App Awake is active")
                 .setContentText(message)
                 .setSubText("By: Sameer Ali")
-                .setColor(getColor(R.color.brand_primary))
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setContentIntent(openPendingIntent)
+                .setContentIntent(openPending)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_SERVICE)
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_media_pause,
                         "Stop monitoring",
-                        stopPendingIntent
+                        stopPending
                 ).build())
                 .build();
     }
@@ -341,13 +406,6 @@ public final class AppMonitorService extends Service {
             startForeground(NOTIFICATION_ID, notification);
         }
         foregroundStarted = true;
-    }
-
-    private void saveErrorAndStop(String message) {
-        AppPreferences.get(this).edit()
-                .putString(AppPreferences.KEY_LAST_ERROR, message)
-                .apply();
-        requestStop(true, message);
     }
 
     private void requestStop(boolean disableMonitoring, String reason) {
@@ -368,35 +426,42 @@ public final class AppMonitorService extends Service {
         if (disableMonitoring) {
             AppPreferences.setMonitoringEnabled(this, false);
         }
-        releaseScreenWakeLock();
+        releaseWakeLock();
+        tracker.clear();
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
         }
+
         AppPreferences.get(this).edit()
                 .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, false)
+                .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, false)
                 .putString(AppPreferences.KEY_PROTECTED_PACKAGE, "")
-                .putString(AppPreferences.KEY_LAST_ERROR,
-                        reason == null ? "" : reason)
+                .putString(AppPreferences.KEY_LAST_ERROR, reason == null ? "" : reason)
                 .apply();
+
         sendBroadcast(new Intent(ACTION_STATUS)
                 .setPackage(getPackageName())
                 .putExtra(EXTRA_SERVICE_RUNNING, false)
-                .putExtra(EXTRA_FOREGROUND_PACKAGE, publishedForegroundPackage)
-                .putExtra(EXTRA_PROTECTED_PACKAGE, ""));
+                .putExtra(EXTRA_FOREGROUND_PACKAGE, publishedForeground)
+                .putExtra(EXTRA_PROTECTED_PACKAGE, "")
+                .putExtra(EXTRA_PROTECTION_ACTIVE, false));
+
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
     @Override
     public void onDestroy() {
-        releaseScreenWakeLock();
+        releaseWakeLock();
+        tracker.clear();
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
         }
         AppPreferences.get(this).edit()
                 .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, false)
+                .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, false)
                 .putString(AppPreferences.KEY_PROTECTED_PACKAGE, "")
                 .apply();
         super.onDestroy();

@@ -24,8 +24,10 @@ public final class AppPreferences {
     public static final String KEY_SERVICE_RUNNING = "service_running";
     public static final String KEY_LAST_FOREGROUND_PACKAGE = "last_foreground_package";
     public static final String KEY_PROTECTED_PACKAGE = "protected_package";
+    public static final String KEY_PROTECTION_ACTIVE = "protection_active";
     public static final String KEY_LAST_STATUS_EPOCH_MS = "last_status_epoch_ms";
     public static final String KEY_LAST_ERROR = "last_error";
+    public static final String KEY_DETECTION_SOURCE = "detection_source";
 
     public static SharedPreferences get(Context context) {
         return context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE);
