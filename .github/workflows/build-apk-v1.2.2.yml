@@ -24,13 +24,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Apply v1.2.3 reliability patch
+      - name: Apply exact v1.2.3 reliability source overlay
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d tools/v123_patch.gz.b64 | gzip -d > /tmp/v123.patch
-          git apply --check /tmp/v123.patch
-          git apply /tmp/v123.patch
+          cat tools/v123_overlay.part0 tools/v123_overlay.part1 tools/v123_overlay.part2 | base64 -d > /tmp/v123_overlay.tar.gz
+          echo '853c02025df53608691271c4f0615a49934052346ec44488c3482c0c1c3af04f  /tmp/v123_overlay.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/v123_overlay.tar.gz -C .
 
       - name: Verify pinned v1.2.3 configuration
         shell: bash
