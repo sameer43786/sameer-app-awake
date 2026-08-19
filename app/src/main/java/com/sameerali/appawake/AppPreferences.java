@@ -28,6 +28,8 @@ public final class AppPreferences {
     public static final String KEY_LAST_STATUS_EPOCH_MS = "last_status_epoch_ms";
     public static final String KEY_LAST_ERROR = "last_error";
     public static final String KEY_DETECTION_SOURCE = "detection_source";
+    public static final String KEY_ACCESSIBILITY_CONNECTED = "accessibility_connected";
+    public static final String KEY_GUARD_WINDOW_ATTACHED = "guard_window_attached";
 
     public static SharedPreferences get(Context context) {
         return context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE);

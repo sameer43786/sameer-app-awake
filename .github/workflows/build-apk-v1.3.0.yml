@@ -1,9 +1,12 @@
-name: Build App Awake v1.2.2 APK
+name: Build App Awake v1.3.0 APK
 
 on:
   push:
     branches:
-      - agent/build-apk-v1.2.2
+      - agent/build-apk-v1.3.0
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -24,17 +27,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify pinned build configuration
+      - name: Verify v1.3.0 configuration and Advanced Guard files
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 5' app/build.gradle.kts
-          grep -q 'versionName = "1.2.2"' app/build.gradle.kts
+          grep -q 'versionCode = 7' app/build.gradle.kts
+          grep -q 'versionName = "1.3.0"' app/build.gradle.kts
           grep -q 'version "9.3.1"' build.gradle.kts
           grep -q 'gradle-9.5.0-bin.zip' gradle/wrapper/gradle-wrapper.properties
           grep -q 'KEY_PROTECTION_ACTIVE = "protection_active"' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'SameerAccessibilityGuardService' app/src/main/AndroidManifest.xml
+          grep -q 'TYPE_ACCESSIBILITY_OVERLAY' app/src/main/java/com/sameerali/appawake/SameerAccessibilityGuardService.java
+          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/SameerAccessibilityGuardService.java
+          grep -q 'canRetrieveWindowContent="false"' app/src/main/res/xml/accessibility_service_config.xml
 
       - name: Install stable Android SDK 36
         shell: bash
@@ -62,7 +69,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verify APK identity and signature
+      - name: Verify APK identity, accessibility service, and signature
         shell: bash
         run: |
           set -euo pipefail
@@ -71,9 +78,12 @@ jobs:
           AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
           APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='5'" apk-badging.txt
-          grep -q "versionName='1.2.2'" apk-badging.txt
+          grep -q "versionCode='7'" apk-badging.txt
+          grep -q "versionName='1.3.0'" apk-badging.txt
+          grep -q 'SameerAccessibilityGuardService' apk-manifest.txt
+          grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
           sha256sum "$APK" | tee apk-sha256.txt
 
@@ -82,15 +92,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.2.2-PrivateSpace.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.3.0-AdvancedGuard.apk
           cp apk-badging.txt dist/
+          cp apk-manifest.txt dist/
           cp apk-signature.txt dist/
           cp apk-sha256.txt dist/
 
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.2.2-PrivateSpace
+          name: Sameer-App-Awake-v1.3.0-AdvancedGuard
           path: dist/
           if-no-files-found: error
           retention-days: 14
