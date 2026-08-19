@@ -1,9 +1,6 @@
-name: Build App Awake v1.2.2 APK
+name: Build App Awake v1.2.3 APK
 
 on:
-  push:
-    branches:
-      - agent/build-apk-v1.2.2
   pull_request:
     branches:
       - main
@@ -27,17 +24,27 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify pinned build configuration
+      - name: Apply v1.2.3 reliability patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d tools/v123_patch.gz.b64 | gzip -d > /tmp/v123.patch
+          git apply --check /tmp/v123.patch
+          git apply /tmp/v123.patch
+
+      - name: Verify pinned v1.2.3 configuration
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 5' app/build.gradle.kts
-          grep -q 'versionName = "1.2.2"' app/build.gradle.kts
+          grep -q 'versionCode = 6' app/build.gradle.kts
+          grep -q 'versionName = "1.2.3"' app/build.gradle.kts
           grep -q 'version "9.3.1"' build.gradle.kts
           grep -q 'gradle-9.5.0-bin.zip' gradle/wrapper/gradle-wrapper.properties
-          grep -q 'KEY_PROTECTION_ACTIVE = "protection_active"' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'KEY_SERVICE_HEARTBEAT_EPOCH_MS' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/sameerali/appawake/ReliabilityUtils.java
 
       - name: Install stable Android SDK 36
         shell: bash
@@ -75,8 +82,8 @@ jobs:
           APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='5'" apk-badging.txt
-          grep -q "versionName='1.2.2'" apk-badging.txt
+          grep -q "versionCode='6'" apk-badging.txt
+          grep -q "versionName='1.2.3'" apk-badging.txt
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
           sha256sum "$APK" | tee apk-sha256.txt
 
@@ -85,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.2.2-PrivateSpace.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.2.3-PrivateSpace-Reliability.apk
           cp apk-badging.txt dist/
           cp apk-signature.txt dist/
           cp apk-sha256.txt dist/
@@ -93,7 +100,7 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.2.2-PrivateSpace
+          name: Sameer-App-Awake-v1.2.3-PrivateSpace-Reliability
           path: dist/
           if-no-files-found: error
           retention-days: 14
