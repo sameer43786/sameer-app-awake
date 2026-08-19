@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat tools/v123_overlay.part0 tools/v123_overlay.part1 tools/v123_overlay.part2 | base64 -d > /tmp/v123_overlay.tar.gz
+          cat tools/v123_overlay.part0 tools/v123_overlay.part1 | base64 -d > /tmp/v123_overlay.tar.gz
           echo '853c02025df53608691271c4f0615a49934052346ec44488c3482c0c1c3af04f  /tmp/v123_overlay.tar.gz' | sha256sum -c -
           tar -xzf /tmp/v123_overlay.tar.gz -C .
 
