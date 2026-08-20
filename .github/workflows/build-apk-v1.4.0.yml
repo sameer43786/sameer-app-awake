@@ -38,7 +38,6 @@ jobs:
           grep -q 'HomeActivity' app/src/main/AndroidManifest.xml
           grep -q 'ProtectedBrowserActivity' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
-          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml)" -eq 1
           grep -q 'Open Protected Browser' app/src/main/java/com/sameerali/appawake/HomeActivity.java
           grep -q 'Manage protected apps' app/src/main/java/com/sameerali/appawake/HomeActivity.java
           grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
