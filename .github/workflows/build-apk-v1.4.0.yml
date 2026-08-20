@@ -1,4 +1,4 @@
-name: Build App Awake v1.7.0 APK
+name: Build App Awake v1.7.1 APK
 
 on:
   push:
@@ -27,20 +27,51 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify v1.7.0 full-screen browser configuration
+      - name: Apply v1.7.1 centered-menu patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          browser = Path("app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java")
+          text = browser.read_text(encoding="utf-8")
+
+          old_gravity = "Gravity.TOP | Gravity.END"
+          old_margins = "handleParams.setMargins(0, dp(7), dp(7), 0);"
+          assert text.count(old_gravity) == 1, "Unexpected floating-handle gravity source state"
+          assert text.count(old_margins) == 1, "Unexpected floating-handle margin source state"
+
+          text = text.replace(old_gravity, "Gravity.TOP | Gravity.CENTER_HORIZONTAL", 1)
+          text = text.replace(old_margins, "handleParams.setMargins(0, dp(7), 0, 0);", 1)
+          browser.write_text(text, encoding="utf-8")
+
+          gradle = Path("app/build.gradle.kts")
+          g = gradle.read_text(encoding="utf-8")
+          assert 'versionCode = 12' in g, "Unexpected source versionCode"
+          assert 'versionName = "1.7.0"' in g, "Unexpected source versionName"
+          g = g.replace('versionCode = 12', 'versionCode = 13', 1)
+          g = g.replace('versionName = "1.7.0"', 'versionName = "1.7.1"', 1)
+          gradle.write_text(g, encoding="utf-8")
+          PY
+
+      - name: Verify v1.7.1 centered full-screen browser configuration
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 12' app/build.gradle.kts
-          grep -q 'versionName = "1.7.0"' app/build.gradle.kts
+          grep -q 'versionCode = 13' app/build.gradle.kts
+          grep -q 'versionName = "1.7.1"' app/build.gradle.kts
           grep -q 'HomeActivity' app/src/main/AndroidManifest.xml
           grep -q 'ProtectedBrowserActivity' app/src/main/AndroidManifest.xml
           grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'SOFT_INPUT_ADJUST_RESIZE' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'TOOLBAR_AUTO_HIDE_MS' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'Show browser controls' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'Gravity.TOP | Gravity.CENTER_HORIZONTAL' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'handleParams.setMargins(0, dp(7), 0, 0);' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          if grep -q 'Gravity.TOP | Gravity.END' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java; then exit 1; fi
           grep -q 'hideToolbar' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'Enter website address' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'Accept-Language' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
@@ -70,7 +101,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verify APK identity, launcher, browser, and signature
+      - name: Verify APK identity, centered browser, and signature
         shell: bash
         run: |
           set -euo pipefail
@@ -81,8 +112,8 @@ jobs:
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
           "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='12'" apk-badging.txt
-          grep -q "versionName='1.7.0'" apk-badging.txt
+          grep -q "versionCode='13'" apk-badging.txt
+          grep -q "versionName='1.7.1'" apk-badging.txt
           grep -q 'HomeActivity' apk-manifest.txt
           grep -q 'ProtectedBrowserActivity' apk-manifest.txt
           if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
@@ -94,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.7.0-FullScreen-ProtectedBrowser.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.7.1-CenteredMenu-ProtectedBrowser.apk
           cp apk-badging.txt dist/
           cp apk-manifest.txt dist/
           cp apk-signature.txt dist/
@@ -103,7 +134,7 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.7.0-FullScreen-ProtectedBrowser
+          name: Sameer-App-Awake-v1.7.1-CenteredMenu-ProtectedBrowser
           path: dist/
           if-no-files-found: error
           retention-days: 14
