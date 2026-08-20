@@ -2,15 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Profile-local foreground detection. Granted by the user separately in Main/Private Space. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
-
-    <!-- Display + CPU wake locks used only while a selected foreground app is protected. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Continuous user-visible monitoring. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -31,6 +27,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.SameerAppAwake">
 
         <activity
@@ -42,11 +39,17 @@
             </intent-filter>
         </activity>
 
-        <!--
-          Advanced-Protection-safe one-tap launcher.
-          It arms the foreground service before Chrome is opened, then immediately exits.
-          No Accessibility service, overlay permission, root, or bootloader changes are used.
-        -->
+        <activity
+            android:name=".ProtectedBrowserActivity"
+            android:exported="true"
+            android:label="Protected Browser"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".ProtectedChromeActivity"
             android:excludeFromRecents="true"
@@ -67,7 +70,7 @@
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-controlled selected-app display protection with same-profile foreground detection, bright display wake lock, and a visible foreground-service notification." />
+                android:value="User-controlled selected-app display protection with same-profile foreground detection and visible foreground-service notification." />
         </service>
 
         <receiver
@@ -80,5 +83,4 @@
             </intent-filter>
         </receiver>
     </application>
-
 </manifest>
