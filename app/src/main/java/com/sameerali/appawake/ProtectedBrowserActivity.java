@@ -12,10 +12,13 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.LocaleList;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -31,6 +34,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -40,12 +44,16 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Protected browser window owned by Sameer App Awake.
+ * Full-screen protected browser owned by Sameer App Awake.
  *
- * <p>The browser uses the documented FLAG_KEEP_SCREEN_ON mechanism on its own
- * visible Activity. The display therefore remains awake for as long as this
- * browser is visible and normal Android timeout resumes as soon as it leaves
- * the foreground.</p>
+ * <p>The WebView occupies the full usable display. Browser controls are an overlay
+ * that auto-hides after navigation so chat/message fields get the same practical
+ * screen area as a normal mobile browser. A small floating handle reveals the
+ * controls whenever the user needs Back, Reload, URL entry, or Close.</p>
+ *
+ * <p>FLAG_KEEP_SCREEN_ON is applied to this visible Activity. Android's normal
+ * inactivity timeout therefore remains suppressed while this browser is visible
+ * and resumes as soon as the Activity leaves the foreground.</p>
  *
  * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
  */
@@ -54,6 +62,7 @@ public final class ProtectedBrowserActivity extends Activity {
     private static final String PREFS = "protected_browser_preferences";
     private static final String KEY_LAST_URL = "last_url";
     private static final String DEFAULT_URL = "https://www.google.com/?hl=en";
+    private static final long TOOLBAR_AUTO_HIDE_MS = 3200L;
 
     private static final Map<String, String> ENGLISH_HEADERS = new HashMap<>();
 
@@ -61,9 +70,14 @@ public final class ProtectedBrowserActivity extends Activity {
         ENGLISH_HEADERS.put("Accept-Language", "en-US,en;q=0.9");
     }
 
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+
     private WebView webView;
     private EditText addressBar;
-    private TextView statusText;
+    private LinearLayout toolbarPanel;
+    private TextView revealHandle;
+
+    private final Runnable hideToolbarRunnable = this::hideToolbar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,11 +85,7 @@ public final class ProtectedBrowserActivity extends Activity {
         super.onCreate(savedInstanceState);
         configureSystemBars();
 
-        // Resize the browser when the keyboard opens instead of allowing the URL
-        // controls to be pushed under the status/navigation bars.
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-
-        // Android's supported keep-awake mechanism for the visible Activity.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         buildUi();
@@ -93,6 +103,7 @@ public final class ProtectedBrowserActivity extends Activity {
         }
 
         navigate(initialUrl);
+        showToolbar(false);
     }
 
     private void forceEnglishLocale() {
@@ -124,16 +135,13 @@ public final class ProtectedBrowserActivity extends Activity {
     }
 
     private void buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(getColor(R.color.app_background));
         root.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
 
-        // Android 15+ edge-to-edge requires explicit insets. This keeps the entire
-        // browser toolbar below the clock/status icons and above navigation controls.
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int left;
             int top;
@@ -155,53 +163,68 @@ public final class ProtectedBrowserActivity extends Activity {
             return insets;
         });
 
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.setPadding(dp(10), dp(8), dp(10), dp(5));
+        webView = new WebView(this);
+        webView.setBackgroundColor(Color.BLACK);
+        root.addView(webView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        toolbarPanel = new LinearLayout(this);
+        toolbarPanel.setOrientation(LinearLayout.VERTICAL);
+        toolbarPanel.setPadding(dp(8), dp(6), dp(8), dp(8));
+        toolbarPanel.setBackground(rounded(
+                getColor(R.color.app_background),
+                0,
+                getColor(R.color.border),
+                dp(1)
+        ));
+        toolbarPanel.setElevation(dp(8));
+
+        LinearLayout navigationRow = new LinearLayout(this);
+        navigationRow.setOrientation(LinearLayout.HORIZONTAL);
+        navigationRow.setGravity(Gravity.CENTER_VERTICAL);
 
         Button back = compactButton("Back");
         back.setOnClickListener(v -> {
+            resetAutoHide();
             if (webView != null && webView.canGoBack()) {
                 webView.goBack();
             } else {
                 finish();
             }
         });
-        titleRow.addView(back, new LinearLayout.LayoutParams(dp(70), dp(44)));
-
-        TextView title = new TextView(this);
-        title.setText("Protected Browser");
-        title.setTextColor(getColor(R.color.text_primary));
-        title.setTextSize(17);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        titleParams.setMargins(dp(10), 0, dp(8), 0);
-        titleRow.addView(title, titleParams);
+        navigationRow.addView(back, new LinearLayout.LayoutParams(0, dp(42), 1f));
 
         Button reload = compactButton("Reload");
         reload.setOnClickListener(v -> {
+            resetAutoHide();
             if (webView != null) {
                 webView.reload();
             }
         });
-        titleRow.addView(reload, new LinearLayout.LayoutParams(dp(76), dp(44)));
+        LinearLayout.LayoutParams reloadParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        reloadParams.setMargins(dp(6), 0, 0, 0);
+        navigationRow.addView(reload, reloadParams);
+
+        Button hide = compactButton("Hide");
+        hide.setOnClickListener(v -> hideToolbar());
+        LinearLayout.LayoutParams hideParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        hideParams.setMargins(dp(6), 0, 0, 0);
+        navigationRow.addView(hide, hideParams);
 
         Button close = compactButton("Close");
         close.setOnClickListener(v -> finish());
-        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(72), dp(44));
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
         closeParams.setMargins(dp(6), 0, 0, 0);
-        titleRow.addView(close, closeParams);
+        navigationRow.addView(close, closeParams);
 
-        root.addView(titleRow);
+        toolbarPanel.addView(navigationRow);
 
-        // Dedicated full-width address row. The URL field never shares a row with
-        // Back/Reload/Close, which prevents the overlap shown on narrow Pixel screens.
         LinearLayout addressRow = new LinearLayout(this);
         addressRow.setOrientation(LinearLayout.HORIZONTAL);
         addressRow.setGravity(Gravity.CENTER_VERTICAL);
-        addressRow.setPadding(dp(10), dp(3), dp(10), dp(5));
+        addressRow.setPadding(0, dp(6), 0, 0);
 
         addressBar = new EditText(this);
         addressBar.setSingleLine(true);
@@ -212,13 +235,20 @@ public final class ProtectedBrowserActivity extends Activity {
         addressBar.setHintTextColor(getColor(R.color.text_secondary));
         addressBar.setTextSize(14);
         addressBar.setSelectAllOnFocus(true);
-        addressBar.setPadding(dp(14), 0, dp(14), 0);
+        addressBar.setPadding(dp(13), 0, dp(13), 0);
         addressBar.setBackground(rounded(
                 getColor(R.color.surface),
                 dp(12),
                 getColor(R.color.border),
                 dp(1)
         ));
+        addressBar.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                cancelAutoHide();
+            } else {
+                resetAutoHide();
+            }
+        });
         addressBar.setOnEditorActionListener((v, actionId, event) -> {
             boolean enter = event != null
                     && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
@@ -229,30 +259,47 @@ public final class ProtectedBrowserActivity extends Activity {
             }
             return false;
         });
-        addressRow.addView(addressBar, new LinearLayout.LayoutParams(0, dp(50), 1f));
+        addressRow.addView(addressBar, new LinearLayout.LayoutParams(0, dp(48), 1f));
 
         Button go = compactButton("Go");
         go.setOnClickListener(v -> navigate(addressBar.getText().toString()));
-        LinearLayout.LayoutParams goParams = new LinearLayout.LayoutParams(dp(64), dp(50));
-        goParams.setMargins(dp(8), 0, 0, 0);
+        LinearLayout.LayoutParams goParams = new LinearLayout.LayoutParams(dp(60), dp(48));
+        goParams.setMargins(dp(7), 0, 0, 0);
         addressRow.addView(go, goParams);
 
-        root.addView(addressRow);
+        toolbarPanel.addView(addressRow);
 
-        statusText = new TextView(this);
-        statusText.setText("Screen protection active while this browser is visible");
-        statusText.setTextColor(getColor(R.color.success));
-        statusText.setTextSize(11);
-        statusText.setPadding(dp(12), dp(2), dp(12), dp(7));
-        root.addView(statusText);
-
-        webView = new WebView(this);
-        webView.setBackgroundColor(Color.BLACK);
-        root.addView(webView, new LinearLayout.LayoutParams(
+        FrameLayout.LayoutParams toolbarParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP
+        );
+        root.addView(toolbarPanel, toolbarParams);
+
+        revealHandle = new TextView(this);
+        revealHandle.setText("⋮");
+        revealHandle.setTextColor(getColor(R.color.text_primary));
+        revealHandle.setTextSize(24);
+        revealHandle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        revealHandle.setGravity(Gravity.CENTER);
+        revealHandle.setContentDescription("Show browser controls");
+        revealHandle.setBackground(rounded(
+                getColor(R.color.surface),
+                dp(16),
+                getColor(R.color.brand_primary),
+                dp(1)
         ));
+        revealHandle.setElevation(dp(10));
+        revealHandle.setAlpha(0.92f);
+        revealHandle.setOnClickListener(v -> showToolbar(true));
+
+        FrameLayout.LayoutParams handleParams = new FrameLayout.LayoutParams(
+                dp(42),
+                dp(42),
+                Gravity.TOP | Gravity.END
+        );
+        handleParams.setMargins(0, dp(7), dp(7), 0);
+        root.addView(revealHandle, handleParams);
 
         setContentView(root);
     }
@@ -261,10 +308,10 @@ public final class ProtectedBrowserActivity extends Activity {
         Button button = new Button(this);
         button.setText(text);
         button.setAllCaps(false);
-        button.setTextSize(12);
+        button.setTextSize(11);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setTextColor(getColor(R.color.brand_primary));
-        button.setPadding(dp(7), 0, dp(7), 0);
+        button.setPadding(dp(5), 0, dp(5), 0);
         button.setBackground(rounded(
                 getColor(R.color.surface),
                 dp(11),
@@ -284,7 +331,53 @@ public final class ProtectedBrowserActivity extends Activity {
         return drawable;
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    private void showToolbar(boolean focusAddressBar) {
+        if (toolbarPanel == null || revealHandle == null) {
+            return;
+        }
+        toolbarPanel.setVisibility(View.VISIBLE);
+        revealHandle.setVisibility(View.GONE);
+        cancelAutoHide();
+
+        if (focusAddressBar && addressBar != null) {
+            addressBar.requestFocus();
+            addressBar.selectAll();
+            InputMethodManager manager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) {
+                manager.showSoftInput(addressBar, InputMethodManager.SHOW_IMPLICIT);
+            }
+        } else {
+            resetAutoHide();
+        }
+    }
+
+    private void hideToolbar() {
+        if (toolbarPanel == null || revealHandle == null) {
+            return;
+        }
+        cancelAutoHide();
+        if (addressBar != null) {
+            addressBar.clearFocus();
+        }
+        hideKeyboard();
+        toolbarPanel.setVisibility(View.GONE);
+        revealHandle.setVisibility(View.VISIBLE);
+    }
+
+    private void resetAutoHide() {
+        cancelAutoHide();
+        if (toolbarPanel != null
+                && toolbarPanel.getVisibility() == View.VISIBLE
+                && (addressBar == null || !addressBar.hasFocus())) {
+            uiHandler.postDelayed(hideToolbarRunnable, TOOLBAR_AUTO_HIDE_MS);
+        }
+    }
+
+    private void cancelAutoHide() {
+        uiHandler.removeCallbacks(hideToolbarRunnable);
+    }
+
+    @SuppressLint({"SetJavaScriptEnabled", "ClickableViewAccessibility"})
     private void configureWebView() {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -340,8 +433,18 @@ public final class ProtectedBrowserActivity extends Activity {
                             .apply();
                 }
                 CookieManager.getInstance().flush();
-                statusText.setText("Screen protection active • normal timeout resumes when you leave");
+                uiHandler.postDelayed(ProtectedBrowserActivity.this::hideToolbar, 650L);
             }
+        });
+
+        webView.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN
+                    && toolbarPanel != null
+                    && toolbarPanel.getVisibility() == View.VISIBLE
+                    && (addressBar == null || !addressBar.hasFocus())) {
+                hideToolbar();
+            }
+            return false;
         });
 
         DownloadListener listener = (url, userAgent, contentDisposition, mimetype, contentLength) -> {
@@ -357,7 +460,7 @@ public final class ProtectedBrowserActivity extends Activity {
     private void navigate(String raw) {
         String value = raw == null ? "" : raw.trim();
         if (value.isEmpty()) {
-            addressBar.requestFocus();
+            showToolbar(true);
             return;
         }
 
@@ -367,6 +470,7 @@ public final class ProtectedBrowserActivity extends Activity {
 
         if (!isWebUrl(value)) {
             Toast.makeText(this, "Enter a valid HTTP or HTTPS website address.", Toast.LENGTH_SHORT).show();
+            showToolbar(true);
             return;
         }
 
@@ -374,8 +478,8 @@ public final class ProtectedBrowserActivity extends Activity {
         addressBar.setText(value);
         addressBar.clearFocus();
         hideKeyboard();
-        statusText.setText("Loading… screen protection is already active");
         webView.loadUrl(value, ENGLISH_HEADERS);
+        uiHandler.postDelayed(this::hideToolbar, 500L);
     }
 
     private String forceEnglishForKnownGooglePages(String value) {
@@ -399,8 +503,6 @@ public final class ProtectedBrowserActivity extends Activity {
             return value;
         }
 
-        // Replace an existing hl value as well. This matters when Google redirects
-        // to accounts.google.com with hl=es based on prior account/browser locale.
         Uri.Builder builder = uri.buildUpon().clearQuery();
         for (String name : uri.getQueryParameterNames()) {
             if ("hl".equalsIgnoreCase(name)) {
@@ -445,6 +547,7 @@ public final class ProtectedBrowserActivity extends Activity {
 
     @Override
     protected void onPause() {
+        cancelAutoHide();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         CookieManager.getInstance().flush();
         if (webView != null) {
@@ -455,6 +558,7 @@ public final class ProtectedBrowserActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cancelAutoHide();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         CookieManager.getInstance().flush();
         if (webView != null) {
@@ -467,9 +571,15 @@ public final class ProtectedBrowserActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView != null && webView.canGoBack()) {
-            webView.goBack();
-            return true;
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (toolbarPanel != null && toolbarPanel.getVisibility() == View.VISIBLE) {
+                hideToolbar();
+                return true;
+            }
+            if (webView != null && webView.canGoBack()) {
+                webView.goBack();
+                return true;
+            }
         }
         return super.onKeyDown(keyCode, event);
     }
