@@ -22,11 +22,15 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Keeps the display awake only while a user-selected app is actually in the foreground.
+ * Advanced-Protection-safe display guard.
  *
- * <p>The service is profile-local. A copy running in Pixel Private Space monitors apps in
- * that same Android profile. It combines UsageEvents lifecycle transitions with a conservative
- * UsageStats last-visible fallback for Private Space, Chrome, WebAPK and PWA cases.</p>
+ * <p>This version intentionally does not depend on Android Accessibility. A profile-local
+ * foreground service combines UsageEvents/UsageStats foreground detection with a strong
+ * SCREEN_BRIGHT_WAKE_LOCK. A dedicated Protected Chrome launcher arms the lock before Chrome
+ * opens, eliminating the switch-detection race that can otherwise occur in Private Space.</p>
+ *
+ * <p>The lock is released when Chrome/another selected app leaves the foreground. A physical
+ * power-button press is never overridden.</p>
  *
  * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
  */
@@ -35,8 +39,10 @@ public final class AppMonitorService extends Service {
     public static final String ACTION_START = "com.sameerali.appawake.action.START";
     public static final String ACTION_STOP = "com.sameerali.appawake.action.STOP";
     public static final String ACTION_REFRESH = "com.sameerali.appawake.action.REFRESH";
+    public static final String ACTION_ARM_PACKAGE = "com.sameerali.appawake.action.ARM_PACKAGE";
     public static final String ACTION_STATUS = "com.sameerali.appawake.action.STATUS";
 
+    public static final String EXTRA_ARM_PACKAGE = "arm_package";
     public static final String EXTRA_FOREGROUND_PACKAGE = "foreground_package";
     public static final String EXTRA_PROTECTED_PACKAGE = "protected_package";
     public static final String EXTRA_SERVICE_RUNNING = "service_running";
@@ -45,20 +51,30 @@ public final class AppMonitorService extends Service {
 
     private static final String CHANNEL_ID = "app_aware_screen_monitoring";
     private static final int NOTIFICATION_ID = 3107;
-    private static final long POLL_MS = 500L;
+
+    private static final long POLL_MS = 250L;
     private static final long INITIAL_WINDOW_MS = TimeUnit.MINUTES.toMillis(30);
     private static final long OVERLAP_MS = 2_000L;
     private static final long STATS_LOOKBACK_MS = TimeUnit.MINUTES.toMillis(10);
-    private static final long FALLBACK_FRESHNESS_MS = 3_000L;
-    private static final long WAKE_MAX_MS = TimeUnit.MINUTES.toMillis(10);
-    private static final long WAKE_RENEW_MS = TimeUnit.MINUTES.toMillis(8);
+    private static final long FALLBACK_FRESHNESS_MS = 5_000L;
+
+    // The display lock is periodically renewed so a single lock is never held forever.
+    private static final long WAKE_MAX_MS = TimeUnit.MINUTES.toMillis(30);
+    private static final long WAKE_RENEW_MS = TimeUnit.MINUTES.toMillis(25);
+
+    // Protected Chrome is armed before Chrome is launched. These short grace windows bridge
+    // UsageStats/UsageEvents delivery latency without keeping the screen awake after Chrome exits.
+    private static final long ARM_START_GRACE_MS = 20_000L;
+    private static final long DETECTOR_GAP_GRACE_MS = 5_000L;
+    private static final long LEAVE_CONFIRM_MS = 1_250L;
 
     private final ForegroundAppTracker tracker = new ForegroundAppTracker();
 
     private UsageStatsManager usageStatsManager;
     private PowerManager powerManager;
     private NotificationManager notificationManager;
-    private PowerManager.WakeLock wakeLock;
+    private PowerManager.WakeLock displayWakeLock;
+    private PowerManager.WakeLock cpuWakeLock;
     private ScheduledExecutorService scheduler;
 
     private volatile long previousQueryEndMs;
@@ -66,6 +82,13 @@ public final class AppMonitorService extends Service {
     private volatile boolean lastInteractive;
     private volatile boolean stopRequested;
     private volatile boolean foregroundStarted;
+
+    private volatile String armedPackage = "";
+    private volatile boolean armedConfirmed;
+    private volatile long armDeadlineElapsedMs;
+    private volatile long lastArmedSeenElapsedMs;
+    private volatile long differentPackageSinceElapsedMs;
+
     private volatile String publishedForeground = "";
     private volatile String publishedProtected = "";
     private volatile String publishedSource = "";
@@ -78,7 +101,7 @@ public final class AppMonitorService extends Service {
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         createNotificationChannel();
-        createWakeLock();
+        createWakeLocks();
         lastInteractive = powerManager != null && powerManager.isInteractive();
 
         AppPreferences.get(this).edit()
@@ -91,9 +114,18 @@ public final class AppMonitorService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
+
         if (ACTION_STOP.equals(action)) {
             requestStop(true, null);
             return START_NOT_STICKY;
+        }
+
+        if (ACTION_ARM_PACKAGE.equals(action) && intent != null) {
+            String requestedPackage = intent.getStringExtra(EXTRA_ARM_PACKAGE);
+            if (requestedPackage != null && !requestedPackage.trim().isEmpty()) {
+                AppPreferences.setPackageSelected(this, requestedPackage, true);
+                AppPreferences.setMonitoringEnabled(this, true);
+            }
         }
 
         if (!AppPreferences.monitoringEnabled(this)) {
@@ -108,20 +140,29 @@ public final class AppMonitorService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (ACTION_ARM_PACKAGE.equals(action) && intent != null) {
+            String requestedPackage = intent.getStringExtra(EXTRA_ARM_PACKAGE);
+            if (requestedPackage != null && !requestedPackage.trim().isEmpty()) {
+                armPackage(requestedPackage.trim());
+            }
+        }
+
         startPolling();
+
         if (ACTION_REFRESH.equals(action)) {
             publishedForeground = "__refresh__";
             publishedProtected = "__refresh__";
             publishedSource = "__refresh__";
             pollSafely();
         }
+
         return START_STICKY;
     }
 
     private boolean prerequisitesReady() {
         return usageStatsManager != null
                 && powerManager != null
-                && wakeLock != null
+                && displayWakeLock != null
                 && PermissionUtils.hasUsageAccess(this)
                 && !AppPreferences.selectedPackages(this).isEmpty();
     }
@@ -147,7 +188,7 @@ public final class AppMonitorService extends Service {
         } catch (SecurityException error) {
             requestStop(true, "Usage Access was revoked in this Android profile");
         } catch (RuntimeException error) {
-            releaseWakeLock();
+            releaseProtection();
             AppPreferences.get(this).edit()
                     .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, false)
                     .putString(AppPreferences.KEY_LAST_ERROR,
@@ -164,7 +205,9 @@ public final class AppMonitorService extends Service {
 
         boolean interactive = powerManager.isInteractive();
         if (!interactive) {
-            releaseWakeLock();
+            // Respect a real screen-off/power-button action. Do not wake the device back up.
+            releaseProtection();
+            clearArmedPackage();
             tracker.clear();
             previousQueryEndMs = 0L;
             lastInteractive = false;
@@ -178,30 +221,103 @@ public final class AppMonitorService extends Service {
             lastInteractive = true;
         }
 
-        long now = System.currentTimeMillis();
-        queryLifecycleEvents(now);
+        long nowEpoch = System.currentTimeMillis();
+        long nowElapsed = android.os.SystemClock.elapsedRealtime();
+        queryLifecycleEvents(nowEpoch);
 
-        UsageCandidate candidate = queryMostRecentlyVisible(now);
-        String source = "events";
+        UsageCandidate candidate = queryMostRecentlyVisible(nowEpoch);
+        String detectionSource = "events";
         if (candidate != null
                 && candidate.timestampMs > tracker.latestTimestampMs()
-                && now - candidate.timestampMs <= FALLBACK_FRESHNESS_MS) {
+                && nowEpoch - candidate.timestampMs <= FALLBACK_FRESHNESS_MS) {
             tracker.recordVisible(candidate.packageName, candidate.timestampMs);
-            source = "last-visible";
+            detectionSource = "last-visible";
         }
 
         String currentPackage = tracker.currentPackage();
         Set<String> selected = AppPreferences.selectedPackages(this);
-        boolean requested = !currentPackage.isEmpty() && selected.contains(currentPackage);
-        boolean active = false;
 
-        if (requested) {
-            active = acquireOrRenewWakeLock();
-        } else {
-            releaseWakeLock();
+        String protectedPackage = "";
+        String source = detectionSource;
+
+        if (!armedPackage.isEmpty()) {
+            if (armedPackage.equals(currentPackage)) {
+                armedConfirmed = true;
+                lastArmedSeenElapsedMs = nowElapsed;
+                differentPackageSinceElapsedMs = 0L;
+                protectedPackage = armedPackage;
+                source = "protected-launch-confirmed";
+            } else if (!armedConfirmed && nowElapsed <= armDeadlineElapsedMs) {
+                // The user explicitly tapped Protected Chrome. Hold the display lock while
+                // Android transitions from this launcher activity into Chrome.
+                protectedPackage = armedPackage;
+                source = "protected-launch-grace";
+            } else if (armedConfirmed) {
+                if (currentPackage.isEmpty()) {
+                    if (nowElapsed - lastArmedSeenElapsedMs <= DETECTOR_GAP_GRACE_MS) {
+                        protectedPackage = armedPackage;
+                        source = "detector-gap-grace";
+                    } else {
+                        clearArmedPackage();
+                    }
+                } else if (selected.contains(currentPackage)) {
+                    // Another selected app became active. Protect it and end the manual Chrome latch.
+                    protectedPackage = currentPackage;
+                    source = detectionSource;
+                    clearArmedPackage();
+                } else {
+                    if (differentPackageSinceElapsedMs == 0L) {
+                        differentPackageSinceElapsedMs = nowElapsed;
+                    }
+                    if (nowElapsed - differentPackageSinceElapsedMs < LEAVE_CONFIRM_MS) {
+                        protectedPackage = armedPackage;
+                        source = "leave-confirmation";
+                    } else {
+                        clearArmedPackage();
+                    }
+                }
+            } else {
+                clearArmedPackage();
+            }
         }
 
-        publishStatus(currentPackage, active ? currentPackage : "", active, source);
+        if (protectedPackage.isEmpty()
+                && !currentPackage.isEmpty()
+                && selected.contains(currentPackage)) {
+            protectedPackage = currentPackage;
+            source = detectionSource;
+        }
+
+        boolean active;
+        if (!protectedPackage.isEmpty()) {
+            active = acquireOrRenewProtection();
+        } else {
+            releaseProtection();
+            active = false;
+        }
+
+        publishStatus(currentPackage, active ? protectedPackage : "", active, source);
+    }
+
+    private void armPackage(String packageName) {
+        armedPackage = packageName;
+        armedConfirmed = false;
+        long elapsed = android.os.SystemClock.elapsedRealtime();
+        armDeadlineElapsedMs = elapsed + ARM_START_GRACE_MS;
+        lastArmedSeenElapsedMs = elapsed;
+        differentPackageSinceElapsedMs = 0L;
+
+        boolean active = acquireOrRenewProtection();
+        publishStatus(packageName, active ? packageName : "", active,
+                active ? "protected-launch-armed" : "protected-launch-lock-failed");
+    }
+
+    private void clearArmedPackage() {
+        armedPackage = "";
+        armedConfirmed = false;
+        armDeadlineElapsedMs = 0L;
+        lastArmedSeenElapsedMs = 0L;
+        differentPackageSinceElapsedMs = 0L;
     }
 
     private void queryLifecycleEvents(long now) {
@@ -268,37 +384,65 @@ public final class AppMonitorService extends Service {
     }
 
     @SuppressWarnings("deprecation")
-    private void createWakeLock() {
-        if (powerManager == null
-                || !powerManager.isWakeLockLevelSupported(PowerManager.SCREEN_DIM_WAKE_LOCK)) {
+    private void createWakeLocks() {
+        if (powerManager == null) {
             return;
         }
-        wakeLock = powerManager.newWakeLock(
-                PowerManager.SCREEN_DIM_WAKE_LOCK,
-                "sameer-app-awake:SelectedAppDisplayProtection"
+
+        int displayLevel;
+        if (powerManager.isWakeLockLevelSupported(PowerManager.SCREEN_BRIGHT_WAKE_LOCK)) {
+            displayLevel = PowerManager.SCREEN_BRIGHT_WAKE_LOCK;
+        } else if (powerManager.isWakeLockLevelSupported(PowerManager.SCREEN_DIM_WAKE_LOCK)) {
+            displayLevel = PowerManager.SCREEN_DIM_WAKE_LOCK;
+        } else {
+            return;
+        }
+
+        displayWakeLock = powerManager.newWakeLock(
+                displayLevel,
+                "sameer-app-awake:SelectedAppBrightDisplayProtection"
         );
-        wakeLock.setReferenceCounted(false);
+        displayWakeLock.setReferenceCounted(false);
+
+        cpuWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "sameer-app-awake:SelectedAppMonitorCpu"
+        );
+        cpuWakeLock.setReferenceCounted(false);
     }
 
     @SuppressWarnings("WakelockTimeout")
-    private synchronized boolean acquireOrRenewWakeLock() {
-        if (wakeLock == null) {
+    private synchronized boolean acquireOrRenewProtection() {
+        if (displayWakeLock == null) {
             return false;
         }
+
         long elapsed = android.os.SystemClock.elapsedRealtime();
-        if (wakeLock.isHeld() && elapsed - wakeAcquiredElapsedMs >= WAKE_RENEW_MS) {
-            wakeLock.release();
+        if (displayWakeLock.isHeld() && elapsed - wakeAcquiredElapsedMs >= WAKE_RENEW_MS) {
+            displayWakeLock.release();
+            if (cpuWakeLock != null && cpuWakeLock.isHeld()) {
+                cpuWakeLock.release();
+            }
         }
-        if (!wakeLock.isHeld()) {
-            wakeLock.acquire(WAKE_MAX_MS);
+
+        if (!displayWakeLock.isHeld()) {
+            displayWakeLock.acquire(WAKE_MAX_MS);
             wakeAcquiredElapsedMs = elapsed;
         }
-        return wakeLock.isHeld();
+
+        if (cpuWakeLock != null && !cpuWakeLock.isHeld()) {
+            cpuWakeLock.acquire(WAKE_MAX_MS);
+        }
+
+        return displayWakeLock.isHeld();
     }
 
-    private synchronized void releaseWakeLock() {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
+    private synchronized void releaseProtection() {
+        if (displayWakeLock != null && displayWakeLock.isHeld()) {
+            displayWakeLock.release();
+        }
+        if (cpuWakeLock != null && cpuWakeLock.isHeld()) {
+            cpuWakeLock.release();
         }
         wakeAcquiredElapsedMs = 0L;
     }
@@ -331,7 +475,7 @@ public final class AppMonitorService extends Service {
 
         if (foregroundStarted && notificationManager != null) {
             String text = active
-                    ? "Screen awake for " + PermissionUtils.appLabel(this, safeProtected)
+                    ? "Bright display lock held for " + PermissionUtils.appLabel(this, safeProtected)
                     : "Monitoring " + AppPreferences.selectedPackages(this).size() + " selected app(s)";
             notificationManager.notify(NOTIFICATION_ID, buildNotification(text, active));
         }
@@ -368,6 +512,13 @@ public final class AppMonitorService extends Service {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        Intent protectedChromeIntent = new Intent(this, ProtectedChromeActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent protectedChromePending = PendingIntent.getActivity(
+                this, 102, protectedChromeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
         Intent stopIntent = new Intent(this, AppMonitorService.class).setAction(ACTION_STOP);
         PendingIntent stopPending = PendingIntent.getService(
                 this, 101, stopIntent,
@@ -387,6 +538,11 @@ public final class AppMonitorService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setCategory(Notification.CATEGORY_SERVICE)
+                .addAction(new Notification.Action.Builder(
+                        android.R.drawable.ic_menu_view,
+                        "Protected Chrome",
+                        protectedChromePending
+                ).build())
                 .addAction(new Notification.Action.Builder(
                         android.R.drawable.ic_media_pause,
                         "Stop monitoring",
@@ -426,7 +582,8 @@ public final class AppMonitorService extends Service {
         if (disableMonitoring) {
             AppPreferences.setMonitoringEnabled(this, false);
         }
-        releaseWakeLock();
+        releaseProtection();
+        clearArmedPackage();
         tracker.clear();
         if (scheduler != null) {
             scheduler.shutdownNow();
@@ -453,7 +610,8 @@ public final class AppMonitorService extends Service {
 
     @Override
     public void onDestroy() {
-        releaseWakeLock();
+        releaseProtection();
+        clearArmedPackage();
         tracker.clear();
         if (scheduler != null) {
             scheduler.shutdownNow();
