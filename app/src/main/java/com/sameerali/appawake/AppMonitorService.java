@@ -10,10 +10,12 @@ import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.provider.Settings;
 
 import java.util.List;
 import java.util.Set;
@@ -22,11 +24,14 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Keeps the display awake only while a user-selected app is actually in the foreground.
+ * Sameer App Awake v1.3.1 monitoring service.
  *
- * <p>The service is profile-local. A copy running in Pixel Private Space monitors apps in
- * that same Android profile. It combines UsageEvents lifecycle transitions with a conservative
- * UsageStats last-visible fallback for Private Space, Chrome, WebAPK and PWA cases.</p>
+ * <p>Primary strategy: profile-local Usage Access determines the selected foreground package,
+ * then a 1x1 transparent TYPE_APPLICATION_OVERLAY window carries FLAG_KEEP_SCREEN_ON. This
+ * avoids Android Advanced Protection's restriction on third-party AccessibilityService tools.</p>
+ *
+ * <p>A legacy screen wake lock is retained only as a redundant backup. The overlay captures
+ * no touch/key input and reads no screen or browser content.</p>
  *
  * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
  */
@@ -45,11 +50,11 @@ public final class AppMonitorService extends Service {
 
     private static final String CHANNEL_ID = "app_aware_screen_monitoring";
     private static final int NOTIFICATION_ID = 3107;
-    private static final long POLL_MS = 500L;
+    private static final long POLL_MS = 350L;
     private static final long INITIAL_WINDOW_MS = TimeUnit.MINUTES.toMillis(30);
     private static final long OVERLAP_MS = 2_000L;
     private static final long STATS_LOOKBACK_MS = TimeUnit.MINUTES.toMillis(10);
-    private static final long FALLBACK_FRESHNESS_MS = 3_000L;
+    private static final long FALLBACK_FRESHNESS_MS = 3_500L;
     private static final long WAKE_MAX_MS = TimeUnit.MINUTES.toMillis(10);
     private static final long WAKE_RENEW_MS = TimeUnit.MINUTES.toMillis(8);
 
@@ -59,6 +64,7 @@ public final class AppMonitorService extends Service {
     private PowerManager powerManager;
     private NotificationManager notificationManager;
     private PowerManager.WakeLock wakeLock;
+    private OverlayKeepAwakeController overlayGuard;
     private ScheduledExecutorService scheduler;
 
     private volatile long previousQueryEndMs;
@@ -77,6 +83,7 @@ public final class AppMonitorService extends Service {
         usageStatsManager = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        overlayGuard = new OverlayKeepAwakeController(this);
         createNotificationChannel();
         createWakeLock();
         lastInteractive = powerManager != null && powerManager.isInteractive();
@@ -103,9 +110,16 @@ public final class AppMonitorService extends Service {
 
         startForegroundCompat(buildNotification("Monitoring selected apps", false));
 
-        if (!prerequisitesReady()) {
+        if (!corePrerequisitesReady()) {
             requestStop(true, "Usage Access or selected apps are missing in this Android profile");
             return START_NOT_STICKY;
+        }
+
+        if (overlayGuard == null || !overlayGuard.isPermissionGranted()) {
+            AppPreferences.get(this).edit()
+                    .putString(AppPreferences.KEY_LAST_ERROR,
+                            "Grant Display over other apps for reliable Advanced Protection compatible keep-awake")
+                    .apply();
         }
 
         startPolling();
@@ -118,10 +132,9 @@ public final class AppMonitorService extends Service {
         return START_STICKY;
     }
 
-    private boolean prerequisitesReady() {
+    private boolean corePrerequisitesReady() {
         return usageStatsManager != null
                 && powerManager != null
-                && wakeLock != null
                 && PermissionUtils.hasUsageAccess(this)
                 && !AppPreferences.selectedPackages(this).isEmpty();
     }
@@ -131,7 +144,7 @@ public final class AppMonitorService extends Service {
             return;
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "SameerAppAwake-Monitor");
+            Thread t = new Thread(r, "SameerAppAwake-OverlayMonitor");
             t.setDaemon(true);
             return t;
         });
@@ -145,9 +158,10 @@ public final class AppMonitorService extends Service {
         try {
             poll();
         } catch (SecurityException error) {
+            releaseAllProtection();
             requestStop(true, "Usage Access was revoked in this Android profile");
         } catch (RuntimeException error) {
-            releaseWakeLock();
+            releaseAllProtection();
             AppPreferences.get(this).edit()
                     .putBoolean(AppPreferences.KEY_PROTECTION_ACTIVE, false)
                     .putString(AppPreferences.KEY_LAST_ERROR,
@@ -157,14 +171,14 @@ public final class AppMonitorService extends Service {
     }
 
     private void poll() {
-        if (!AppPreferences.monitoringEnabled(this) || !prerequisitesReady()) {
+        if (!AppPreferences.monitoringEnabled(this) || !corePrerequisitesReady()) {
             requestStop(true, "Monitoring prerequisites are no longer available");
             return;
         }
 
         boolean interactive = powerManager.isInteractive();
         if (!interactive) {
-            releaseWakeLock();
+            releaseAllProtection();
             tracker.clear();
             previousQueryEndMs = 0L;
             lastInteractive = false;
@@ -182,7 +196,7 @@ public final class AppMonitorService extends Service {
         queryLifecycleEvents(now);
 
         UsageCandidate candidate = queryMostRecentlyVisible(now);
-        String source = "events";
+        String source = "activity-events";
         if (candidate != null
                 && candidate.timestampMs > tracker.latestTimestampMs()
                 && now - candidate.timestampMs <= FALLBACK_FRESHNESS_MS) {
@@ -192,16 +206,48 @@ public final class AppMonitorService extends Service {
 
         String currentPackage = tracker.currentPackage();
         Set<String> selected = AppPreferences.selectedPackages(this);
-        boolean requested = !currentPackage.isEmpty() && selected.contains(currentPackage);
-        boolean active = false;
+        boolean selectedForeground = !currentPackage.isEmpty() && selected.contains(currentPackage);
 
-        if (requested) {
-            active = acquireOrRenewWakeLock();
+        boolean overlayActive = false;
+        boolean wakeBackupActive = false;
+        if (selectedForeground) {
+            if (overlayGuard != null && overlayGuard.isPermissionGranted()) {
+                overlayActive = overlayGuard.acquire();
+            }
+            wakeBackupActive = acquireOrRenewWakeLock();
         } else {
-            releaseWakeLock();
+            releaseAllProtection();
         }
 
-        publishStatus(currentPackage, active ? currentPackage : "", active, source);
+        boolean active = selectedForeground && (overlayActive || wakeBackupActive);
+        String actuator;
+        if (overlayActive && wakeBackupActive) {
+            actuator = "overlay+wakelock";
+        } else if (overlayActive) {
+            actuator = "overlay";
+        } else if (wakeBackupActive) {
+            actuator = "wakelock-fallback";
+        } else if (selectedForeground) {
+            actuator = "no-actuator";
+        } else {
+            actuator = "idle";
+        }
+
+        if (selectedForeground && !overlayActive) {
+            AppPreferences.get(this).edit()
+                    .putString(AppPreferences.KEY_LAST_ERROR,
+                            "Display-over-other-apps permission is required for the primary keep-awake guard")
+                    .apply();
+        } else if (overlayActive) {
+            AppPreferences.get(this).edit().putString(AppPreferences.KEY_LAST_ERROR, "").apply();
+        }
+
+        publishStatus(
+                currentPackage,
+                active ? currentPackage : "",
+                active,
+                source + "/" + actuator
+        );
     }
 
     private void queryLifecycleEvents(long now) {
@@ -275,7 +321,7 @@ public final class AppMonitorService extends Service {
         }
         wakeLock = powerManager.newWakeLock(
                 PowerManager.SCREEN_DIM_WAKE_LOCK,
-                "sameer-app-awake:SelectedAppDisplayProtection"
+                "sameer-app-awake:OverlayGuardBackupWakeLock"
         );
         wakeLock.setReferenceCounted(false);
     }
@@ -301,6 +347,13 @@ public final class AppMonitorService extends Service {
             wakeLock.release();
         }
         wakeAcquiredElapsedMs = 0L;
+    }
+
+    private void releaseAllProtection() {
+        if (overlayGuard != null) {
+            overlayGuard.release();
+        }
+        releaseWakeLock();
     }
 
     private void publishStatus(String foreground, String protectedPackage,
@@ -330,9 +383,14 @@ public final class AppMonitorService extends Service {
                 .apply();
 
         if (foregroundStarted && notificationManager != null) {
-            String text = active
-                    ? "Screen awake for " + PermissionUtils.appLabel(this, safeProtected)
-                    : "Monitoring " + AppPreferences.selectedPackages(this).size() + " selected app(s)";
+            String text;
+            if (active) {
+                text = "Screen awake for " + PermissionUtils.appLabel(this, safeProtected);
+            } else if (overlayGuard != null && !overlayGuard.isPermissionGranted()) {
+                text = "Grant Display over other apps for reliable protection";
+            } else {
+                text = "Monitoring " + AppPreferences.selectedPackages(this).size() + " selected app(s)";
+            }
             notificationManager.notify(NOTIFICATION_ID, buildNotification(text, active));
         }
 
@@ -378,8 +436,7 @@ public final class AppMonitorService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
 
-        return builder
-                .setSmallIcon(R.drawable.ic_notification)
+        builder.setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(active ? "Display protection active" : "Sameer App Awake is active")
                 .setContentText(message)
                 .setSubText("By: Sameer Ali")
@@ -391,8 +448,27 @@ public final class AppMonitorService extends Service {
                         android.R.drawable.ic_media_pause,
                         "Stop monitoring",
                         stopPending
-                ).build())
-                .build();
+                ).build());
+
+        if (overlayGuard != null && !overlayGuard.isPermissionGranted()) {
+            Intent overlayIntent = new Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            PendingIntent overlayPending = PendingIntent.getActivity(
+                    this,
+                    102,
+                    overlayIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+            builder.addAction(new Notification.Action.Builder(
+                    android.R.drawable.ic_menu_manage,
+                    "Grant overlay",
+                    overlayPending
+            ).build());
+        }
+
+        return builder.build();
     }
 
     private void startForegroundCompat(Notification notification) {
@@ -426,7 +502,7 @@ public final class AppMonitorService extends Service {
         if (disableMonitoring) {
             AppPreferences.setMonitoringEnabled(this, false);
         }
-        releaseWakeLock();
+        releaseAllProtection();
         tracker.clear();
         if (scheduler != null) {
             scheduler.shutdownNow();
@@ -453,7 +529,7 @@ public final class AppMonitorService extends Service {
 
     @Override
     public void onDestroy() {
-        releaseWakeLock();
+        releaseAllProtection();
         tracker.clear();
         if (scheduler != null) {
             scheduler.shutdownNow();
