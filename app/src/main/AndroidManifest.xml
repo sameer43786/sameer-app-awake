@@ -30,8 +30,9 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.SameerAppAwake">
 
+        <!-- Single public launcher. Both modes live inside Sameer App Awake. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".HomeActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -40,28 +41,23 @@
         </activity>
 
         <activity
-            android:name=".ProtectedBrowserActivity"
-            android:exported="true"
-            android:label="Protected Browser"
-            android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:name=".MainActivity"
+            android:exported="false" />
 
+        <activity
+            android:name=".ProtectedBrowserActivity"
+            android:exported="false"
+            android:label="Protected Browser"
+            android:launchMode="singleTask" />
+
+        <!-- Legacy pre-armed Chrome launcher retained internally only; no separate icon. -->
         <activity
             android:name=".ProtectedChromeActivity"
             android:excludeFromRecents="true"
-            android:exported="true"
+            android:exported="false"
             android:label="Protected Chrome"
             android:noHistory="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".AppMonitorService"
