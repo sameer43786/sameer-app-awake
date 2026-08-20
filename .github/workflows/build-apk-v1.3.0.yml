@@ -1,4 +1,4 @@
-name: Build App Awake v1.3.0 APK
+name: Build App Awake v1.3.1 APK
 
 on:
   push:
@@ -27,21 +27,20 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify v1.3.0 configuration and Advanced Guard files
+      - name: Verify v1.3.1 Overlay Guard configuration
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 7' app/build.gradle.kts
-          grep -q 'versionName = "1.3.0"' app/build.gradle.kts
-          grep -q 'version "9.3.1"' build.gradle.kts
-          grep -q 'gradle-9.5.0-bin.zip' gradle/wrapper/gradle-wrapper.properties
+          grep -q 'versionCode = 8' app/build.gradle.kts
+          grep -q 'versionName = "1.3.1"' app/build.gradle.kts
+          grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
+          ! grep -q 'SameerAccessibilityGuardService' app/src/main/AndroidManifest.xml
+          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/sameerali/appawake/OverlayKeepAwakeController.java
+          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/OverlayKeepAwakeController.java
+          grep -q 'OverlayKeepAwakeController' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
           grep -q 'KEY_PROTECTION_ACTIVE = "protection_active"' app/src/main/java/com/sameerali/appawake/AppPreferences.java
-          grep -q 'SameerAccessibilityGuardService' app/src/main/AndroidManifest.xml
-          grep -q 'TYPE_ACCESSIBILITY_OVERLAY' app/src/main/java/com/sameerali/appawake/SameerAccessibilityGuardService.java
-          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/SameerAccessibilityGuardService.java
-          grep -q 'canRetrieveWindowContent="false"' app/src/main/res/xml/accessibility_service_config.xml
 
       - name: Install stable Android SDK 36
         shell: bash
@@ -69,7 +68,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verify APK identity, accessibility service, and signature
+      - name: Verify APK identity, overlay permission, and signature
         shell: bash
         run: |
           set -euo pipefail
@@ -80,10 +79,10 @@ jobs:
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
           "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='7'" apk-badging.txt
-          grep -q "versionName='1.3.0'" apk-badging.txt
-          grep -q 'SameerAccessibilityGuardService' apk-manifest.txt
-          grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt
+          grep -q "versionCode='8'" apk-badging.txt
+          grep -q "versionName='1.3.1'" apk-badging.txt
+          grep -q 'android.permission.SYSTEM_ALERT_WINDOW' apk-manifest.txt
+          ! grep -q 'SameerAccessibilityGuardService' apk-manifest.txt
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
           sha256sum "$APK" | tee apk-sha256.txt
 
@@ -92,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.3.0-AdvancedGuard.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.3.1-OverlayGuard.apk
           cp apk-badging.txt dist/
           cp apk-manifest.txt dist/
           cp apk-signature.txt dist/
@@ -101,7 +100,7 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.3.0-AdvancedGuard
+          name: Sameer-App-Awake-v1.3.1-OverlayGuard
           path: dist/
           if-no-files-found: error
           retention-days: 14
