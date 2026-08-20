@@ -1,4 +1,4 @@
-name: Build App Awake v1.4.0 APK
+name: Build App Awake v1.5.0 APK
 
 on:
   push:
@@ -27,37 +27,28 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify v1.4.0 Advanced Protection safe configuration
+      - name: Verify v1.5.0 Protected Browser configuration
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 8' app/build.gradle.kts
-          grep -q 'versionName = "1.4.0"' app/build.gradle.kts
-          grep -q 'version "9.3.1"' build.gradle.kts
-          grep -q 'gradle-9.5.0-bin.zip' gradle/wrapper/gradle-wrapper.properties
-          grep -q 'ProtectedChromeActivity' app/src/main/AndroidManifest.xml
-          grep -q 'SCREEN_BRIGHT_WAKE_LOCK' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
-          grep -q 'PARTIAL_WAKE_LOCK' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
-          grep -q 'ACTION_ARM_PACKAGE' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
-          grep -q 'Protected Chrome' app/src/main/java/com/sameerali/appawake/ProtectedChromeActivity.java
-          if grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then
-            echo 'Accessibility service must not be declared in v1.4.0' >&2
-            exit 1
-          fi
+          grep -q 'versionCode = 9' app/build.gradle.kts
+          grep -q 'versionName = "1.5.0"' app/build.gradle.kts
+          grep -q 'ProtectedBrowserActivity' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          if grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then exit 1; fi
 
       - name: Install stable Android SDK 36
         shell: bash
         run: |
           set -euo pipefail
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(command -v sdkmanager)"
-          fi
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
-          test -f "${ANDROID_HOME}/platforms/android-36/android.jar"
 
       - name: Run foreground-state unit checks
         shell: bash
@@ -73,24 +64,21 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verify APK identity, protected launcher, no accessibility service, and signature
+      - name: Verify APK identity, Protected Browser, no accessibility service, and signature
         shell: bash
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
           AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
           APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          test -s "$APK"
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
           "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='8'" apk-badging.txt
-          grep -q "versionName='1.4.0'" apk-badging.txt
-          grep -q 'ProtectedChromeActivity' apk-manifest.txt
-          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then
-            echo 'Unexpected accessibility service in packaged manifest' >&2
-            exit 1
-          fi
+          grep -q "versionCode='9'" apk-badging.txt
+          grep -q "versionName='1.5.0'" apk-badging.txt
+          grep -q 'ProtectedBrowserActivity' apk-manifest.txt
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
           sha256sum "$APK" | tee apk-sha256.txt
 
@@ -99,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.4.0-AdvancedProtectionSafe.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.5.0-ProtectedBrowser.apk
           cp apk-badging.txt dist/
           cp apk-manifest.txt dist/
           cp apk-signature.txt dist/
@@ -108,7 +96,7 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.4.0-AdvancedProtectionSafe
+          name: Sameer-App-Awake-v1.5.0-ProtectedBrowser
           path: dist/
           if-no-files-found: error
           retention-days: 14
