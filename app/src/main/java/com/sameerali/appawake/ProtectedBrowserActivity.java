@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.LocaleList;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -41,10 +42,10 @@ import java.util.Map;
 /**
  * Protected browser window owned by Sameer App Awake.
  *
- * <p>Android guarantees FLAG_KEEP_SCREEN_ON for the visible Activity that owns the
- * window. This Activity therefore hosts the webpage itself. When it is visible the
- * normal inactivity timeout is suppressed. When it leaves the foreground, normal
- * Android timeout behavior resumes.</p>
+ * <p>The browser uses the documented FLAG_KEEP_SCREEN_ON mechanism on its own
+ * visible Activity. The display therefore remains awake for as long as this
+ * browser is visible and normal Android timeout resumes as soon as it leaves
+ * the foreground.</p>
  *
  * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
  */
@@ -70,7 +71,11 @@ public final class ProtectedBrowserActivity extends Activity {
         super.onCreate(savedInstanceState);
         configureSystemBars();
 
-        // Official Android mechanism. The flag belongs to this visible browser window.
+        // Resize the browser when the keyboard opens instead of allowing the URL
+        // controls to be pushed under the status/navigation bars.
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+
+        // Android's supported keep-awake mechanism for the visible Activity.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         buildUi();
@@ -93,8 +98,15 @@ public final class ProtectedBrowserActivity extends Activity {
     private void forceEnglishLocale() {
         Locale english = Locale.US;
         Locale.setDefault(english);
+
         Configuration configuration = new Configuration(getResources().getConfiguration());
-        configuration.setLocale(english);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            LocaleList locales = new LocaleList(english);
+            LocaleList.setDefault(locales);
+            configuration.setLocales(locales);
+        } else {
+            configuration.setLocale(english);
+        }
         getResources().updateConfiguration(configuration, getResources().getDisplayMetrics());
     }
 
@@ -120,8 +132,8 @@ public final class ProtectedBrowserActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
 
-        // Android 15+ enforces edge-to-edge for modern targets. Respect the real status
-        // and navigation bar insets so the URL field never sits underneath clock/icons.
+        // Android 15+ edge-to-edge requires explicit insets. This keeps the entire
+        // browser toolbar below the clock/status icons and above navigation controls.
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int left;
             int top;
@@ -164,11 +176,7 @@ public final class ProtectedBrowserActivity extends Activity {
         title.setTextSize(17);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                0,
-                dp(44),
-                1f
-        );
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
         titleParams.setMargins(dp(10), 0, dp(8), 0);
         titleRow.addView(title, titleParams);
 
@@ -188,8 +196,8 @@ public final class ProtectedBrowserActivity extends Activity {
 
         root.addView(titleRow);
 
-        // Address bar gets its own row. This is intentionally separate from browser
-        // controls so the entire URL remains editable on a phone-sized display.
+        // Dedicated full-width address row. The URL field never shares a row with
+        // Back/Reload/Close, which prevents the overlap shown on narrow Pixel screens.
         LinearLayout addressRow = new LinearLayout(this);
         addressRow.setOrientation(LinearLayout.HORIZONTAL);
         addressRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -304,7 +312,7 @@ public final class ProtectedBrowserActivity extends Activity {
 
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
                     String original = uri.toString();
-                    String english = ensureEnglishForKnownGooglePages(original);
+                    String english = forceEnglishForKnownGooglePages(original);
                     if (!english.equals(original)) {
                         view.loadUrl(english, ENGLISH_HEADERS);
                         return true;
@@ -362,7 +370,7 @@ public final class ProtectedBrowserActivity extends Activity {
             return;
         }
 
-        value = ensureEnglishForKnownGooglePages(value);
+        value = forceEnglishForKnownGooglePages(value);
         addressBar.setText(value);
         addressBar.clearFocus();
         hideKeyboard();
@@ -370,7 +378,7 @@ public final class ProtectedBrowserActivity extends Activity {
         webView.loadUrl(value, ENGLISH_HEADERS);
     }
 
-    private String ensureEnglishForKnownGooglePages(String value) {
+    private String forceEnglishForKnownGooglePages(String value) {
         if (value == null) {
             return "";
         }
@@ -391,13 +399,19 @@ public final class ProtectedBrowserActivity extends Activity {
             return value;
         }
 
-        // Google user-facing pages support the hl parameter. Add it only when absent
-        // so authentication/navigation parameters are not otherwise modified.
-        if (uri.getQueryParameter("hl") == null) {
-            return uri.buildUpon().appendQueryParameter("hl", "en").build().toString();
+        // Replace an existing hl value as well. This matters when Google redirects
+        // to accounts.google.com with hl=es based on prior account/browser locale.
+        Uri.Builder builder = uri.buildUpon().clearQuery();
+        for (String name : uri.getQueryParameterNames()) {
+            if ("hl".equalsIgnoreCase(name)) {
+                continue;
+            }
+            for (String parameterValue : uri.getQueryParameters(name)) {
+                builder.appendQueryParameter(name, parameterValue);
+            }
         }
-
-        return value;
+        builder.appendQueryParameter("hl", "en");
+        return builder.build().toString();
     }
 
     private boolean isWebUrl(String value) {
