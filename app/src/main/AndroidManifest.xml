@@ -2,10 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Profile-local foreground detection. Granted by the user separately in Main/Private Space. -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+
+    <!-- Display + CPU wake locks used only while a selected foreground app is protected. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Continuous user-visible monitoring. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -37,18 +42,23 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".SameerAccessibilityGuardService"
-            android:label="@string/accessibility_guard_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
+        <!--
+          Advanced-Protection-safe one-tap launcher.
+          It arms the foreground service before Chrome is opened, then immediately exits.
+          No Accessibility service, overlay permission, root, or bootloader changes are used.
+        -->
+        <activity
+            android:name=".ProtectedChromeActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="Protected Chrome"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
+        </activity>
 
         <service
             android:name=".AppMonitorService"
@@ -57,7 +67,7 @@
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-controlled selected-app display protection with same-profile foreground detection and a visible foreground-service notification." />
+                android:value="User-controlled selected-app display protection with same-profile foreground detection, bright display wake lock, and a visible foreground-service notification." />
         </service>
 
         <receiver
