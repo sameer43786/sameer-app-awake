@@ -6,6 +6,7 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -38,26 +39,13 @@
         </activity>
 
         <service
-            android:name=".SameerAccessibilityGuardService"
-            android:label="@string/accessibility_guard_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
-
-        <service
             android:name=".AppMonitorService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-controlled selected-app display protection with same-profile foreground detection and a visible foreground-service notification." />
+                android:value="User-controlled selected-app display protection using profile-local Usage Access and a non-interactive keep-screen-on overlay." />
         </service>
 
         <receiver
