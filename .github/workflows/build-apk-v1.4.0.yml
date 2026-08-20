@@ -1,4 +1,4 @@
-name: Build App Awake v1.5.0 APK
+name: Build App Awake v1.5.1 APK
 
 on:
   push:
@@ -27,18 +27,25 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify v1.5.0 Protected Browser configuration
+      - name: Verify v1.5.1 unified app and browser configuration
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 9' app/build.gradle.kts
-          grep -q 'versionName = "1.5.0"' app/build.gradle.kts
+          grep -q 'versionCode = 10' app/build.gradle.kts
+          grep -q 'versionName = "1.5.1"' app/build.gradle.kts
+          grep -q 'HomeActivity' app/src/main/AndroidManifest.xml
           grep -q 'ProtectedBrowserActivity' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml)" -eq 1
+          grep -q 'Open Protected Browser' app/src/main/java/com/sameerali/appawake/HomeActivity.java
+          grep -q 'Manage protected apps' app/src/main/java/com/sameerali/appawake/HomeActivity.java
           grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'setOnApplyWindowInsetsListener' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'Enter website address' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'Accept-Language' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'appendQueryParameter("hl", "en")' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           if grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then exit 1; fi
 
       - name: Install stable Android SDK 36
@@ -64,7 +71,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verify APK identity, Protected Browser, no accessibility service, and signature
+      - name: Verify APK identity, unified launcher, Protected Browser, and signature
         shell: bash
         run: |
           set -euo pipefail
@@ -75,8 +82,9 @@ jobs:
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
           "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='9'" apk-badging.txt
-          grep -q "versionName='1.5.0'" apk-badging.txt
+          grep -q "versionCode='10'" apk-badging.txt
+          grep -q "versionName='1.5.1'" apk-badging.txt
+          grep -q 'HomeActivity' apk-manifest.txt
           grep -q 'ProtectedBrowserActivity' apk-manifest.txt
           if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
@@ -87,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.5.0-ProtectedBrowser.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.5.1-Unified-ProtectedBrowser.apk
           cp apk-badging.txt dist/
           cp apk-manifest.txt dist/
           cp apk-signature.txt dist/
@@ -96,7 +104,7 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.5.0-ProtectedBrowser
+          name: Sameer-App-Awake-v1.5.1-Unified-ProtectedBrowser
           path: dist/
           if-no-files-found: error
           retention-days: 14
