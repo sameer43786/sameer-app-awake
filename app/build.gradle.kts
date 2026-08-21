@@ -32,3 +32,6 @@ android {
         warningsAsErrors = false
     }
 }
+
+// Sameer App Awake Smart Guard v2.0.0
+// By: Sameer Ali | Contact: sameer43786@gmail.com
