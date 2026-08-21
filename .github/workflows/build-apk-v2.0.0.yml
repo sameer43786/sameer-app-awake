@@ -1,0 +1,150 @@
+name: Build App Awake Smart Guard v2.0.0 APK
+
+on:
+  push:
+    branches:
+      - agent/build-apk-v1.4.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Apply Smart Guard v2 service and browser hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          service = Path('app/src/main/java/com/sameerali/appawake/AppMonitorService.java')
+          s = service.read_text()
+
+          old = '''        AppPreferences.get(this).edit()\n                .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, true)'''
+          new = '''        // Recover any stale system-timeout lease before announcing a live monitor.\n        TimeoutLeaseGuard.restoreIfStale(this);\n\n        AppPreferences.get(this).edit()\n                .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, true)'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''        return usageStatsManager != null\n                && powerManager != null\n                && displayWakeLock != null\n                && PermissionUtils.hasUsageAccess(this)'''
+          new = '''        return usageStatsManager != null\n                && powerManager != null\n                && (displayWakeLock != null || TimeoutLeaseGuard.canWrite(this))\n                && PermissionUtils.hasUsageAccess(this)'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''        boolean active;\n        if (!protectedPackage.isEmpty()) {\n            active = acquireOrRenewProtection();\n        } else {\n            releaseProtection();\n            active = false;\n        }\n\n        publishStatus(currentPackage, active ? protectedPackage : "", active, source);'''
+          new = '''        boolean active;\n        if (!protectedPackage.isEmpty()) {\n            // Smart Guard v2 uses Android's own screen-off timeout as the primary\n            // external-app mechanism. The wake lock remains an independent backup.\n            boolean timeoutLeaseActive = TimeoutLeaseGuard.engage(this);\n            TimeoutLeaseGuard.heartbeat(this);\n            boolean wakeLockActive = acquireOrRenewProtection();\n            active = timeoutLeaseActive || wakeLockActive;\n            if (timeoutLeaseActive) {\n                source = source + "+timeout-lease";\n            } else if (wakeLockActive) {\n                source = source + "+wakelock-backup";\n            }\n        } else {\n            releaseProtection();\n            active = false;\n        }\n\n        publishStatus(currentPackage, active ? protectedPackage : "", active, source);'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''    private synchronized void releaseProtection() {\n        if (displayWakeLock != null && displayWakeLock.isHeld()) {'''
+          new = '''    private synchronized void releaseProtection() {\n        // Restore the user's original inactivity timeout before dropping backups.\n        TimeoutLeaseGuard.restore(this);\n        if (displayWakeLock != null && displayWakeLock.isHeld()) {'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          service.write_text(s)
+
+          browser = Path('app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java')
+          b = browser.read_text()
+          b = b.replace('Gravity.TOP | Gravity.END', 'Gravity.TOP | Gravity.CENTER_HORIZONTAL')
+          b = b.replace('handleParams.setMargins(0, dp(7), dp(7), 0);',
+                        'handleParams.setMargins(0, dp(7), 0, 0);')
+          old = '        revealHandle.setOnClickListener(v -> showToolbar(true));\n'
+          new = '''        revealHandle.setOnClickListener(v -> showToolbar(true));\n        revealHandle.setOnLongClickListener(v -> {\n            AppPreferences.clearSmartMode(this);\n            startActivity(new Intent(this, SmartHomeActivity.class)\n                    .putExtra(SmartHomeActivity.EXTRA_CONFIGURE, true));\n            finish();\n            return true;\n        });\n'''
+          assert old in b
+          b = b.replace(old, new, 1)
+          browser.write_text(b)
+          PY
+
+      - name: Verify Smart Guard v2 architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 20' app/build.gradle.kts
+          grep -q 'versionName = "2.0.0"' app/build.gradle.kts
+          grep -q 'android.permission.WRITE_SETTINGS' app/src/main/AndroidManifest.xml
+          grep -q 'SmartHomeActivity' app/src/main/AndroidManifest.xml
+          grep -q 'TimeoutWatchdogReceiver' app/src/main/AndroidManifest.xml
+          grep -q 'MODE_APP' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'MODE_WEB' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'SCREEN_OFF_TIMEOUT' app/src/main/java/com/sameerali/appawake/TimeoutLeaseGuard.java
+          grep -q 'WATCHDOG_STALE_MS' app/src/main/java/com/sameerali/appawake/TimeoutLeaseGuard.java
+          grep -q 'timeout-lease' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'Gravity.TOP | Gravity.CENTER_HORIZONTAL' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml)" -eq 1
+          if grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then exit 1; fi
+
+      - name: Install stable Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run core foreground-state tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/run_core_tests.sh
+          bash tools/run_core_tests.sh
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK package, Smart Guard components, and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
+          grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
+          grep -q "versionCode='20'" apk-badging.txt
+          grep -q "versionName='2.0.0'" apk-badging.txt
+          grep -q 'SmartHomeActivity' apk-manifest.txt
+          grep -q 'TimeoutWatchdogReceiver' apk-manifest.txt
+          grep -q 'android.permission.WRITE_SETTINGS' apk-manifest.txt
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Prepare downloadable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v2.0.0-SmartGuard.apk
+          cp apk-badging.txt dist/
+          cp apk-manifest.txt dist/
+          cp apk-signature.txt dist/
+          cp apk-sha256.txt dist/
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sameer-App-Awake-v2.0.0-SmartGuard
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
