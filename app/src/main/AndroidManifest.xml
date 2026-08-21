@@ -11,6 +11,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <queries>
         <intent>
@@ -30,9 +33,9 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.SameerAppAwake">
 
-        <!-- Single public launcher. Both modes live inside Sameer App Awake. -->
+        <!-- One launcher only. It routes each Android profile to its saved Smart Guard mode. -->
         <activity
-            android:name=".HomeActivity"
+            android:name=".SmartHomeActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -41,16 +44,19 @@
         </activity>
 
         <activity
+            android:name=".HomeActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="false" />
 
         <activity
             android:name=".ProtectedBrowserActivity"
             android:exported="false"
-            android:label="Protected Browser"
+            android:label="Sameer App Awake"
             android:launchMode="singleTask" />
 
-        <!-- Legacy pre-armed Chrome launcher retained internally only; no separate icon. -->
         <activity
             android:name=".ProtectedChromeActivity"
             android:excludeFromRecents="true"
@@ -66,7 +72,7 @@
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-controlled selected-app display protection with same-profile foreground detection and visible foreground-service notification." />
+                android:value="User-controlled selected-app display protection using same-profile foreground detection, a temporary screen-timeout lease, backup wake lock, and visible foreground-service notification." />
         </service>
 
         <receiver
@@ -78,5 +84,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".TimeoutWatchdogReceiver"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 </manifest>
