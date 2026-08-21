@@ -1,0 +1,117 @@
+name: Build Triple Guard v2.1.0 PR Artifact
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out PR
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Apply Triple Guard patch from canonical workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/build-apk-v1.4.0.yml').read_text()
+          start_marker = "          from pathlib import Path\n"
+          end_marker = "          PY\n\n      - name: Verify Triple Guard v2.1.0 architecture"
+          start = workflow.index(start_marker)
+          end = workflow.index(end_marker, start)
+          block = workflow[start:end]
+          code = textwrap.dedent(block)
+          exec(compile(code, '<triple-guard-patch>', 'exec'), {})
+          PY
+
+      - name: Verify patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 21' app/build.gradle.kts
+          grep -q 'versionName = "2.1.0"' app/build.gradle.kts
+          grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
+          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/sameerali/appawake/ScreenOverlayGuard.java
+          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ScreenOverlayGuard.java
+          grep -q 'overlay-window' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'timeout-lease' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'wakelock-backup' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'setTranslationX(root.getWidth() \* 0.20f)' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run core tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/run_core_tests.sh
+          bash tools/run_core_tests.sh
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
+          grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
+          grep -q "versionCode='21'" apk-badging.txt
+          grep -q "versionName='2.1.0'" apk-badging.txt
+          grep -q 'android.permission.SYSTEM_ALERT_WINDOW' apk-manifest.txt
+          grep -q 'android.permission.WRITE_SETTINGS' apk-manifest.txt
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v2.1.0-TripleGuard.apk
+          cp apk-badging.txt dist/
+          cp apk-manifest.txt dist/
+          cp apk-signature.txt dist/
+          cp apk-sha256.txt dist/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sameer-App-Awake-v2.1.0-TripleGuard
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
