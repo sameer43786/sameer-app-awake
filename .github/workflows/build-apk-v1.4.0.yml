@@ -1,4 +1,4 @@
-name: Build App Awake v1.7.1 APK
+name: Build App Awake Smart Guard v2.0.0 APK
 
 on:
   push:
@@ -27,55 +27,69 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Apply v1.7.1 centered-menu patch
+      - name: Apply Smart Guard v2 service and browser hardening
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          browser = Path("app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java")
-          text = browser.read_text(encoding="utf-8")
+          service = Path('app/src/main/java/com/sameerali/appawake/AppMonitorService.java')
+          s = service.read_text()
 
-          old_gravity = "Gravity.TOP | Gravity.END"
-          old_margins = "handleParams.setMargins(0, dp(7), dp(7), 0);"
-          assert text.count(old_gravity) == 1, "Unexpected floating-handle gravity source state"
-          assert text.count(old_margins) == 1, "Unexpected floating-handle margin source state"
+          old = '''        AppPreferences.get(this).edit()\n                .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, true)'''
+          new = '''        TimeoutLeaseGuard.restoreIfStale(this);\n\n        AppPreferences.get(this).edit()\n                .putBoolean(AppPreferences.KEY_SERVICE_RUNNING, true)'''
+          assert old in s
+          s = s.replace(old, new, 1)
 
-          text = text.replace(old_gravity, "Gravity.TOP | Gravity.CENTER_HORIZONTAL", 1)
-          text = text.replace(old_margins, "handleParams.setMargins(0, dp(7), 0, 0);", 1)
-          browser.write_text(text, encoding="utf-8")
+          old = '''        return usageStatsManager != null\n                && powerManager != null\n                && displayWakeLock != null\n                && PermissionUtils.hasUsageAccess(this)'''
+          new = '''        return usageStatsManager != null\n                && powerManager != null\n                && (displayWakeLock != null || TimeoutLeaseGuard.canWrite(this))\n                && PermissionUtils.hasUsageAccess(this)'''
+          assert old in s
+          s = s.replace(old, new, 1)
 
-          gradle = Path("app/build.gradle.kts")
-          g = gradle.read_text(encoding="utf-8")
-          assert 'versionCode = 12' in g, "Unexpected source versionCode"
-          assert 'versionName = "1.7.0"' in g, "Unexpected source versionName"
-          g = g.replace('versionCode = 12', 'versionCode = 13', 1)
-          g = g.replace('versionName = "1.7.0"', 'versionName = "1.7.1"', 1)
-          gradle.write_text(g, encoding="utf-8")
+          old = '''        boolean active;\n        if (!protectedPackage.isEmpty()) {\n            active = acquireOrRenewProtection();\n        } else {\n            releaseProtection();\n            active = false;\n        }\n\n        publishStatus(currentPackage, active ? protectedPackage : "", active, source);'''
+          new = '''        boolean active;\n        if (!protectedPackage.isEmpty()) {\n            boolean timeoutLeaseActive = TimeoutLeaseGuard.engage(this);\n            TimeoutLeaseGuard.heartbeat(this);\n            boolean wakeLockActive = acquireOrRenewProtection();\n            active = timeoutLeaseActive || wakeLockActive;\n            if (timeoutLeaseActive) {\n                source = source + "+timeout-lease";\n            } else if (wakeLockActive) {\n                source = source + "+wakelock-backup";\n            }\n        } else {\n            releaseProtection();\n            active = false;\n        }\n\n        publishStatus(currentPackage, active ? protectedPackage : "", active, source);'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''    private synchronized void releaseProtection() {\n        if (displayWakeLock != null && displayWakeLock.isHeld()) {'''
+          new = '''    private synchronized void releaseProtection() {\n        TimeoutLeaseGuard.restore(this);\n        if (displayWakeLock != null && displayWakeLock.isHeld()) {'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          service.write_text(s)
+
+          browser = Path('app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java')
+          b = browser.read_text()
+          b = b.replace('Gravity.TOP | Gravity.END', 'Gravity.TOP | Gravity.CENTER_HORIZONTAL')
+          b = b.replace('handleParams.setMargins(0, dp(7), dp(7), 0);',
+                        'handleParams.setMargins(0, dp(7), 0, 0);')
+          old = '        revealHandle.setOnClickListener(v -> showToolbar(true));\n'
+          new = '''        revealHandle.setOnClickListener(v -> showToolbar(true));\n        revealHandle.setOnLongClickListener(v -> {\n            AppPreferences.clearSmartMode(this);\n            startActivity(new Intent(this, SmartHomeActivity.class)\n                    .putExtra(SmartHomeActivity.EXTRA_CONFIGURE, true));\n            finish();\n            return true;\n        });\n'''
+          assert old in b
+          b = b.replace(old, new, 1)
+          browser.write_text(b)
           PY
 
-      - name: Verify v1.7.1 centered full-screen browser configuration
+      - name: Verify Smart Guard v2 architecture
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'compileSdk = 36' app/build.gradle.kts
           grep -q 'targetSdk = 36' app/build.gradle.kts
-          grep -q 'versionCode = 13' app/build.gradle.kts
-          grep -q 'versionName = "1.7.1"' app/build.gradle.kts
-          grep -q 'HomeActivity' app/src/main/AndroidManifest.xml
-          grep -q 'ProtectedBrowserActivity' app/src/main/AndroidManifest.xml
+          grep -q 'versionCode = 20' app/build.gradle.kts
+          grep -q 'versionName = "2.0.0"' app/build.gradle.kts
+          grep -q 'android.permission.WRITE_SETTINGS' app/src/main/AndroidManifest.xml
+          grep -q 'SmartHomeActivity' app/src/main/AndroidManifest.xml
+          grep -q 'TimeoutWatchdogReceiver' app/src/main/AndroidManifest.xml
+          grep -q 'MODE_APP' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'MODE_WEB' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'SCREEN_OFF_TIMEOUT' app/src/main/java/com/sameerali/appawake/TimeoutLeaseGuard.java
+          grep -q 'WATCHDOG_STALE_MS' app/src/main/java/com/sameerali/appawake/TimeoutLeaseGuard.java
+          grep -q 'timeout-lease' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
           grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'SOFT_INPUT_ADJUST_RESIZE' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'TOOLBAR_AUTO_HIDE_MS' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'Show browser controls' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'Gravity.TOP | Gravity.CENTER_HORIZONTAL' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'handleParams.setMargins(0, dp(7), 0, 0);' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          if grep -q 'Gravity.TOP | Gravity.END' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java; then exit 1; fi
-          grep -q 'hideToolbar' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'Enter website address' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'Accept-Language' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          grep -q 'appendQueryParameter("hl", "en")' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml)" -eq 1
           if grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then exit 1; fi
 
       - name: Install stable Android SDK 36
@@ -101,7 +115,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verify APK identity, centered browser, and signature
+      - name: Verify APK identity, Smart Guard components, and signature
         shell: bash
         run: |
           set -euo pipefail
@@ -112,10 +126,11 @@ jobs:
           "$AAPT" dump badging "$APK" | tee apk-badging.txt
           "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
-          grep -q "versionCode='13'" apk-badging.txt
-          grep -q "versionName='1.7.1'" apk-badging.txt
-          grep -q 'HomeActivity' apk-manifest.txt
-          grep -q 'ProtectedBrowserActivity' apk-manifest.txt
+          grep -q "versionCode='20'" apk-badging.txt
+          grep -q "versionName='2.0.0'" apk-badging.txt
+          grep -q 'SmartHomeActivity' apk-manifest.txt
+          grep -q 'TimeoutWatchdogReceiver' apk-manifest.txt
+          grep -q 'android.permission.WRITE_SETTINGS' apk-manifest.txt
           if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
           sha256sum "$APK" | tee apk-sha256.txt
@@ -125,7 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.7.1-CenteredMenu-ProtectedBrowser.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v2.0.0-SmartGuard.apk
           cp apk-badging.txt dist/
           cp apk-manifest.txt dist/
           cp apk-signature.txt dist/
@@ -134,7 +149,7 @@ jobs:
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sameer-App-Awake-v1.7.1-CenteredMenu-ProtectedBrowser
+          name: Sameer-App-Awake-v2.0.0-SmartGuard
           path: dist/
           if-no-files-found: error
           retention-days: 14
