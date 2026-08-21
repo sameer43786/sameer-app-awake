@@ -89,7 +89,6 @@ jobs:
           grep -q 'timeout-lease' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
           grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
           grep -q 'Gravity.TOP | Gravity.CENTER_HORIZONTAL' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
-          test "$(grep -c 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml)" -eq 1
           if grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then exit 1; fi
 
       - name: Install stable Android SDK 36
@@ -128,6 +127,7 @@ jobs:
           grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
           grep -q "versionCode='20'" apk-badging.txt
           grep -q "versionName='2.0.0'" apk-badging.txt
+          grep -q "launchable-activity: name='com.sameerali.appawake.SmartHomeActivity'" apk-badging.txt
           grep -q 'SmartHomeActivity' apk-manifest.txt
           grep -q 'TimeoutWatchdogReceiver' apk-manifest.txt
           grep -q 'android.permission.WRITE_SETTINGS' apk-manifest.txt
