@@ -10,8 +10,8 @@ android {
         applicationId = "com.sameerali.appawake"
         minSdk = 29
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.7.0"
+        versionCode = 20
+        versionName = "2.0.0"
     }
 
     buildTypes {
