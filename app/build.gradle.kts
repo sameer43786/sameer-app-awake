@@ -10,8 +10,8 @@ android {
         applicationId = "com.sameerali.appawake"
         minSdk = 29
         targetSdk = 36
-        versionCode = 20
-        versionName = "2.0.0"
+        versionCode = 22
+        versionName = "2.2.0"
     }
 
     buildTypes {
@@ -33,5 +33,5 @@ android {
     }
 }
 
-// Sameer App Awake Smart Guard v2.0.0
+// Sameer App Awake Auto Lifecycle Guard v2.2.0
 // By: Sameer Ali | Contact: sameer43786@gmail.com
