@@ -4,7 +4,11 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/** Restarts monitoring after a reboot or an in-place app update when the user left it enabled. */
+/**
+ * Restores stale timeout state and restarts monitoring after reboot or an in-place update.
+ *
+ * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
+ */
 public final class BootReceiver extends BroadcastReceiver {
 
     @Override
@@ -14,6 +18,11 @@ public final class BootReceiver extends BroadcastReceiver {
                 && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             return;
         }
+
+        // Safety first: never carry an old timeout lease through reboot/update without
+        // a live Smart Guard heartbeat.
+        TimeoutLeaseGuard.restoreIfStale(context);
+
         if (!AppPreferences.monitoringEnabled(context)
                 || AppPreferences.selectedPackages(context).isEmpty()
                 || !PermissionUtils.hasUsageAccess(context)) {
@@ -25,7 +34,6 @@ public final class BootReceiver extends BroadcastReceiver {
         try {
             context.startForegroundService(serviceIntent);
         } catch (RuntimeException error) {
-            // Preserve a concise local diagnostic for the in-app support screen.
             AppPreferences.get(context).edit()
                     .putString(AppPreferences.KEY_LAST_ERROR,
                             "Automatic restart failed: " + error.getClass().getSimpleName())

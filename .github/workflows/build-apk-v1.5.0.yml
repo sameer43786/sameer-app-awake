@@ -1,0 +1,97 @@
+name: Build App Awake v1.5.0 APK
+
+on:
+  push:
+    branches:
+      - agent/build-apk-v1.4.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Verify v1.5.0 Protected Browser configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 9' app/build.gradle.kts
+          grep -q 'versionName = "1.5.0"' app/build.gradle.kts
+          grep -q 'ProtectedBrowserActivity' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          ! grep -q 'BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml
+          grep -q 'FLAG_KEEP_SCREEN_ON' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          grep -q 'getWindow().clearFlags' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+
+      - name: Install stable Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run foreground-state tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/run_core_tests.sh
+          bash tools/run_core_tests.sh
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK identity and Protected Browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
+          grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
+          grep -q "versionCode='9'" apk-badging.txt
+          grep -q "versionName='1.5.0'" apk-badging.txt
+          grep -q 'ProtectedBrowserActivity' apk-manifest.txt
+          ! grep -q 'BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Prepare downloadable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.5.0-ProtectedBrowser.apk
+          cp apk-badging.txt dist/
+          cp apk-manifest.txt dist/
+          cp apk-signature.txt dist/
+          cp apk-sha256.txt dist/
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sameer-App-Awake-v1.5.0-ProtectedBrowser
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

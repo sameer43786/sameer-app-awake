@@ -1,0 +1,198 @@
+name: Build Auto Lifecycle Guard v2.2.0 APK
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out PR
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Apply v2.2.0 automatic UI and recovery hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # ------------------------------------------------------------
+          # Main-space UX: selecting an app is now sufficient to arm it.
+          # There is no stale manual OFF state that can silently leave Maps
+          # selected while the foreground service is not running.
+          # ------------------------------------------------------------
+          main = Path('app/src/main/java/com/sameerali/appawake/MainActivity.java')
+          a = main.read_text()
+
+          a = a.replace(
+              'explanation.setText("The screen stays on only while a selected app is active.");',
+              'explanation.setText("Automatic: selected apps are protected whenever they are active.");'
+          )
+
+          old_switch = '''        monitoringSwitch = new Switch(this);\n        monitoringSwitch.setContentDescription("Enable app-aware display protection");\n        monitoringSwitch.setOnCheckedChangeListener((buttonView, checked) -> {\n            if (updatingSwitch) {\n                return;\n            }\n            if (checked) {\n                beginEnableMonitoring();\n            } else {\n                disableMonitoring();\n            }\n        });\n        card.addView(monitoringSwitch, new LinearLayout.LayoutParams(dp(64), dp(48)));'''
+          new_switch = '''        monitoringSwitch = new Switch(this);\n        monitoringSwitch.setContentDescription("Automatic selected-app protection status");\n        monitoringSwitch.setEnabled(false);\n        card.addView(monitoringSwitch, new LinearLayout.LayoutParams(dp(64), dp(48)));'''
+          assert old_switch in a
+          a = a.replace(old_switch, new_switch, 1)
+
+          old_usage = '''        usageAccessButton.setOnClickListener(view -> {\n            pendingEnableAfterUsageAccess = false;\n            PermissionUtils.openUsageAccessSettings(this);\n        });'''
+          new_usage = '''        usageAccessButton.setOnClickListener(view -> {\n            pendingEnableAfterUsageAccess = !AppPreferences.selectedPackages(this).isEmpty();\n            PermissionUtils.openUsageAccessSettings(this);\n        });'''
+          assert old_usage in a
+          a = a.replace(old_usage, new_usage, 1)
+
+          old_selection = '''    private void onApplicationSelectionChanged(String packageName, boolean selected) {\n        int selectedCount = AppPreferences.selectedPackages(this).size();\n        if (selectedCount == 0 && AppPreferences.monitoringEnabled(this)) {\n            disableMonitoring();\n            toast("Monitoring stopped because no apps remain selected.");\n        } else if (AppPreferences.serviceRunning(this)) {\n            startService(new Intent(this, AppMonitorService.class)\n                    .setAction(AppMonitorService.ACTION_REFRESH));\n        }\n        refreshSelectionTitle();\n        refreshStatusUi();\n    }'''
+          new_selection = '''    private void onApplicationSelectionChanged(String packageName, boolean selected) {\n        int selectedCount = AppPreferences.selectedPackages(this).size();\n        if (selectedCount == 0) {\n            disableMonitoring();\n            toast("Protection stopped because no apps remain selected.");\n        } else {\n            AppPreferences.setMonitoringEnabled(this, true);\n            if (PermissionUtils.hasUsageAccess(this)) {\n                enableMonitoringNow();\n            } else {\n                pendingEnableAfterUsageAccess = true;\n                setMonitoringSwitch(false);\n                toast("Grant Usage Access once. Protection will start automatically when you return.");\n            }\n        }\n        refreshSelectionTitle();\n        refreshStatusUi();\n    }'''
+          assert old_selection in a
+          a = a.replace(old_selection, new_selection, 1)
+
+          old_resume = '''    @Override\n    protected void onResume() {\n        super.onResume();\n        refreshStatusUi();\n\n        if (pendingEnableAfterUsageAccess && PermissionUtils.hasUsageAccess(this)) {\n            pendingEnableAfterUsageAccess = false;\n            requestNotificationPermissionThenStart();\n            return;\n        }\n\n        // Recover a service that Android stopped while the user's enabled preference remained set.\n        if (AppPreferences.monitoringEnabled(this)\n                && PermissionUtils.hasUsageAccess(this)\n                && !AppPreferences.selectedPackages(this).isEmpty()) {\n            enableMonitoringNow();\n        }\n    }'''
+          new_resume = '''    @Override\n    protected void onResume() {\n        super.onResume();\n\n        Set<String> selected = AppPreferences.selectedPackages(this);\n        if (!selected.isEmpty()) {\n            AppPreferences.setMonitoringEnabled(this, true);\n            if (PermissionUtils.hasUsageAccess(this)) {\n                pendingEnableAfterUsageAccess = false;\n                enableMonitoringNow();\n                return;\n            }\n        }\n\n        refreshStatusUi();\n    }'''
+          assert old_resume in a
+          a = a.replace(old_resume, new_resume, 1)
+
+          # Diagnostics make the optional timeout backup explicit. Wake-lock protection
+          # does not depend on WRITE_SETTINGS or Display-over-other-apps.
+          old_diag = '                + "Notification permission: " + yesNo(PermissionUtils.hasNotificationPermission(this)) + "\\n"\n'
+          new_diag = old_diag + '                + "Timeout backup permission: " + yesNo(TimeoutLeaseGuard.canWrite(this)) + "\\n"\n'
+          assert old_diag in a
+          a = a.replace(old_diag, new_diag, 1)
+
+          main.write_text(a)
+
+          # ------------------------------------------------------------
+          # Boot/update recovery: selected apps, not an old toggle value,
+          # are the durable source of truth.
+          # ------------------------------------------------------------
+          boot = Path('app/src/main/java/com/sameerali/appawake/BootReceiver.java')
+          b = boot.read_text()
+          old_boot = '''        if (!AppPreferences.monitoringEnabled(context)\n                || AppPreferences.selectedPackages(context).isEmpty()\n                || !PermissionUtils.hasUsageAccess(context)) {\n            return;\n        }\n\n        Intent serviceIntent = new Intent(context, AppMonitorService.class)'''
+          new_boot = '''        if (AppPreferences.selectedPackages(context).isEmpty()\n                || !PermissionUtils.hasUsageAccess(context)) {\n            return;\n        }\n\n        AppPreferences.setMonitoringEnabled(context, true);\n\n        Intent serviceIntent = new Intent(context, AppMonitorService.class)'''
+          assert old_boot in b
+          b = b.replace(old_boot, new_boot, 1)
+          boot.write_text(b)
+
+          # ------------------------------------------------------------
+          # Keep the private-space browser handle in the user's requested safe
+          # position: right of centre (~70% across), not over profile names.
+          # ------------------------------------------------------------
+          browser = Path('app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java')
+          p = browser.read_text()
+          p = p.replace('Gravity.TOP | Gravity.END', 'Gravity.TOP | Gravity.CENTER_HORIZONTAL')
+          p = p.replace('handleParams.setMargins(0, dp(7), dp(7), 0);',
+                        'handleParams.setMargins(0, dp(7), 0, 0);')
+          anchor = '        root.addView(revealHandle, handleParams);\n'
+          replacement = '''        root.addView(revealHandle, handleParams);\n        root.post(() -> revealHandle.setTranslationX(root.getWidth() * 0.20f));\n'''
+          if 'setTranslationX(root.getWidth() * 0.20f)' not in p:
+              assert anchor in p
+              p = p.replace(anchor, replacement, 1)
+          browser.write_text(p)
+          PY
+
+      - name: Verify v2.2.0 architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 22' app/build.gradle.kts
+          grep -q 'versionName = "2.2.0"' app/build.gradle.kts
+          grep -q 'SelectedAppLifecycleTracker' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'UsageEventsQuery.Builder' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'selected-activity-resumed' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'SCREEN_BRIGHT_WAKE_LOCK' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'TimeoutLeaseGuard.engage' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'monitoringSwitch.setEnabled(false)' app/src/main/java/com/sameerali/appawake/MainActivity.java
+          grep -q 'Protection will start automatically' app/src/main/java/com/sameerali/appawake/MainActivity.java
+          grep -q 'setTranslationX(root.getWidth() \* 0.20f)' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          if grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml; then
+            echo 'Unexpected overlay permission remains in v2.2.0' >&2
+            exit 1
+          fi
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then
+            echo 'Accessibility must not be present' >&2
+            exit 1
+          fi
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run existing foreground-state tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/run_core_tests.sh
+          bash tools/run_core_tests.sh
+
+      - name: Run selected-app lifecycle regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/selected-lifecycle-test"
+          mkdir -p "$OUT"
+          ANDROID_JAR="${ANDROID_HOME}/platforms/android-36/android.jar"
+          javac -cp "$ANDROID_JAR" -d "$OUT" \
+            app/src/main/java/com/sameerali/appawake/SelectedAppLifecycleTracker.java \
+            tools/SelectedAppLifecycleTrackerTest.java
+          java -cp "$OUT:$ANDROID_JAR" com.sameerali.appawake.SelectedAppLifecycleTrackerTest
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
+          grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
+          grep -q "versionCode='22'" apk-badging.txt
+          grep -q "versionName='2.2.0'" apk-badging.txt
+          grep -q "launchable-activity: name='com.sameerali.appawake.SmartHomeActivity'" apk-badging.txt
+          if grep -q 'android.permission.SYSTEM_ALERT_WINDOW' apk-manifest.txt; then exit 1; fi
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v2.2.0-AutoLifecycleGuard.apk
+          cp apk-badging.txt dist/
+          cp apk-manifest.txt dist/
+          cp apk-signature.txt dist/
+          cp apk-sha256.txt dist/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sameer-App-Awake-v2.2.0-AutoLifecycleGuard
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

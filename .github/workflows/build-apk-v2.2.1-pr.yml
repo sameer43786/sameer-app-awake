@@ -1,0 +1,228 @@
+name: Build Strict Selected-Only Guard v2.2.1 APK
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out PR
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Apply v2.2.0 baseline UI patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/build-apk-v2.1.0-pr.yml').read_text()
+          start_marker = "          from pathlib import Path\n"
+          end_marker = "          PY\n\n      - name: Verify v2.2.0 architecture"
+          start = workflow.index(start_marker)
+          end = workflow.index(end_marker, start)
+          code = textwrap.dedent(workflow[start:end])
+          exec(compile(code, '<v2.2.0-baseline-patch>', 'exec'), {})
+          PY
+
+      - name: Apply v2.2.1 strict selected-only foreground gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Version bump.
+          gradle = Path('app/build.gradle.kts')
+          g = gradle.read_text()
+          g = g.replace('versionCode = 22', 'versionCode = 23')
+          g = g.replace('versionName = "2.2.0"', 'versionName = "2.2.1"')
+          g = g.replace('Auto Lifecycle Guard v2.2.0', 'Strict Selected-Only Guard v2.2.1')
+          gradle.write_text(g)
+
+          service = Path('app/src/main/java/com/sameerali/appawake/AppMonitorService.java')
+          s = service.read_text()
+
+          # Hybrid detector: selected lifecycle confirms that a selected app is alive;
+          # a global last-resumed tracker vetoes protection as soon as another real app
+          # becomes foreground. System UI is ignored as a transient overlay.
+          old = '''    private final SelectedAppLifecycleTracker selectedTracker = new SelectedAppLifecycleTracker();\n    private final Set<String> trackedSelection = new HashSet<>();'''
+          new = '''    private final SelectedAppLifecycleTracker selectedTracker = new SelectedAppLifecycleTracker();\n    private final ForegroundAppTracker topTracker = new ForegroundAppTracker();\n    private final Set<String> trackedSelection = new HashSet<>();'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''    private volatile long previousQueryEndMs;\n    private volatile long wakeAcquiredElapsedMs;'''
+          new = '''    private volatile long previousQueryEndMs;\n    private volatile long previousTopQueryEndMs;\n    private volatile long wakeAcquiredElapsedMs;'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          # Every lifecycle reset also resets the top-app veto tracker.
+          s = s.replace(
+              '''            selectedTracker.clearLifecycleState();\n            previousQueryEndMs = 0L;''',
+              '''            selectedTracker.clearLifecycleState();\n            topTracker.clear();\n            previousQueryEndMs = 0L;\n            previousTopQueryEndMs = 0L;'''
+          )
+          s = s.replace(
+              '''        selectedTracker.clearLifecycleState();\n        previousQueryEndMs = 0L;''',
+              '''        selectedTracker.clearLifecycleState();\n        topTracker.clear();\n        previousQueryEndMs = 0L;\n        previousTopQueryEndMs = 0L;'''
+          )
+
+          old = '''        querySelectedLifecycleEvents(nowEpoch, selected);\n\n        String activeSelectedPackage = selectedTracker.activePackage();'''
+          new = '''        querySelectedLifecycleEvents(nowEpoch, selected);\n        queryTopForegroundEvents(nowEpoch);\n\n        String topForegroundPackage = topTracker.currentPackage();\n        String activeSelectedPackage = selectedTracker.activePackage();'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          # Strict veto before any wake/timeout mechanism is engaged.
+          old = '''        boolean active = false;\n        if (!protectedPackage.isEmpty()) {'''
+          new = '''        boolean armedLaunchTransition = !armedPackage.isEmpty()\n                && !armedConfirmed\n                && nowElapsed <= armDeadlineElapsedMs;\n\n        if (!protectedPackage.isEmpty()\n                && !topForegroundPackage.isEmpty()\n                && !selected.contains(topForegroundPackage)\n                && !armedLaunchTransition) {\n            protectedPackage = "";\n            lastSelectedActivePackage = "";\n            lastSelectedSeenElapsedMs = 0L;\n            if (!armedPackage.isEmpty()) {\n                clearArmedPackage();\n            }\n            source = "strict-selected-only-release";\n        }\n\n        boolean active = false;\n        if (!protectedPackage.isEmpty()) {'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''        publishStatus(activeSelectedPackage, active ? protectedPackage : "", active, source);\n    }\n\n    private void querySelectedLifecycleEvents'''
+          new = '''        String statusForeground = topForegroundPackage.isEmpty()\n                ? activeSelectedPackage\n                : topForegroundPackage;\n        publishStatus(statusForeground, active ? protectedPackage : "", active, source);\n    }\n\n    private void queryTopForegroundEvents(long now) {\n        long begin = previousTopQueryEndMs == 0L\n                ? Math.max(0L, now - TimeUnit.MINUTES.toMillis(30))\n                : Math.max(0L, previousTopQueryEndMs - OVERLAP_MS);\n\n        UsageEvents events = usageStatsManager.queryEvents(begin, now + 1L);\n        if (events != null) {\n            UsageEvents.Event event = new UsageEvents.Event();\n            while (events.hasNextEvent()) {\n                events.getNextEvent(event);\n                int type = event.getEventType();\n                if (type != UsageEvents.Event.ACTIVITY_RESUMED\n                        && type != UsageEvents.Event.MOVE_TO_FOREGROUND) {\n                    continue;\n                }\n\n                String packageName = event.getPackageName();\n                if (packageName == null || packageName.trim().isEmpty()) {\n                    continue;\n                }\n\n                // Notification shade / quick settings are transient overlays, not a user\n                // switch to another ordinary app. Do not let them cancel Maps protection.\n                if ("com.android.systemui".equals(packageName)) {\n                    continue;\n                }\n\n                topTracker.recordResumed(packageName, event.getTimeStamp());\n            }\n        }\n        previousTopQueryEndMs = now;\n    }\n\n    private void querySelectedLifecycleEvents'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          # Release paths must also discard a stale global foreground observation.
+          old = '''        selectedTracker.clear();\n        trackedSelection.clear();'''
+          new = '''        selectedTracker.clear();\n        topTracker.clear();\n        trackedSelection.clear();'''
+          s = s.replace(old, new)
+
+          service.write_text(s)
+          PY
+
+      - name: Verify strict selected-only architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 23' app/build.gradle.kts
+          grep -q 'versionName = "2.2.1"' app/build.gradle.kts
+          grep -q 'ForegroundAppTracker topTracker' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'queryTopForegroundEvents' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'strict-selected-only-release' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q '!selected.contains(topForegroundPackage)' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'SelectedAppLifecycleTracker' app/src/main/java/com/sameerali/appawake/AppMonitorService.java
+          grep -q 'monitoringSwitch.setEnabled(false)' app/src/main/java/com/sameerali/appawake/MainActivity.java
+          grep -q 'setTranslationX(root.getWidth() \* 0.20f)' app/src/main/java/com/sameerali/appawake/ProtectedBrowserActivity.java
+          if grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml; then exit 1; fi
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' app/src/main/AndroidManifest.xml; then exit 1; fi
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Run existing foreground-state tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/run_core_tests.sh
+          bash tools/run_core_tests.sh
+
+      - name: Run selected-app lifecycle tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/selected-lifecycle-test"
+          mkdir -p "$OUT"
+          ANDROID_JAR="${ANDROID_HOME}/platforms/android-36/android.jar"
+          javac -cp "$ANDROID_JAR" -d "$OUT" \
+            app/src/main/java/com/sameerali/appawake/SelectedAppLifecycleTracker.java \
+            tools/SelectedAppLifecycleTrackerTest.java
+          java -cp "$OUT:$ANDROID_JAR" com.sameerali.appawake.SelectedAppLifecycleTrackerTest
+
+      - name: Run strict selected-only veto test
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/strict-selected-test"
+          mkdir -p "$OUT/com/sameerali/appawake"
+          cat > "$OUT/com/sameerali/appawake/StrictSelectedOnlyTest.java" <<'JAVA'
+          package com.sameerali.appawake;
+          import java.util.Set;
+          public final class StrictSelectedOnlyTest {
+              public static void main(String[] args) {
+                  String maps = "com.google.android.apps.maps";
+                  String chrome = "com.android.chrome";
+                  Set<String> selected = Set.of(maps);
+                  ForegroundAppTracker tracker = new ForegroundAppTracker();
+                  tracker.recordResumed(maps, 100L);
+                  assertTrue(selected.contains(tracker.currentPackage()), "Selected Maps must pass gate");
+                  tracker.recordResumed(chrome, 200L);
+                  assertTrue(!selected.contains(tracker.currentPackage()), "Unselected Chrome must veto protection");
+                  tracker.recordResumed(maps, 300L);
+                  assertTrue(selected.contains(tracker.currentPackage()), "Returning to Maps must re-arm protection");
+                  System.out.println("PASS: strict selected-only foreground veto");
+              }
+              private static void assertTrue(boolean value, String message) {
+                  if (!value) throw new AssertionError(message);
+              }
+          }
+          JAVA
+          javac -d "$OUT" \
+            app/src/main/java/com/sameerali/appawake/ForegroundAppTracker.java \
+            "$OUT/com/sameerali/appawake/StrictSelectedOnlyTest.java"
+          java -cp "$OUT" com.sameerali.appawake.StrictSelectedOnlyTest
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee apk-manifest.txt
+          grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
+          grep -q "versionCode='23'" apk-badging.txt
+          grep -q "versionName='2.2.1'" apk-badging.txt
+          grep -q "launchable-activity: name='com.sameerali.appawake.SmartHomeActivity'" apk-badging.txt
+          if grep -q 'android.permission.SYSTEM_ALERT_WINDOW' apk-manifest.txt; then exit 1; fi
+          if grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' apk-manifest.txt; then exit 1; fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v2.2.1-StrictSelectedOnly.apk
+          cp apk-badging.txt dist/
+          cp apk-manifest.txt dist/
+          cp apk-signature.txt dist/
+          cp apk-sha256.txt dist/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sameer-App-Awake-v2.2.1-StrictSelectedOnly
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

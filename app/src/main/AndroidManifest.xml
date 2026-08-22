@@ -2,22 +2,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Reads foreground-app transition events after the user grants Usage Access. -->
-    <!-- PACKAGE_USAGE_STATS is user-granted through AppOps, despite lint's system-permission label. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
-
-    <!-- Keeps the display awake only while a selected app is in the foreground. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Required for continuous, user-visible monitoring on modern Android. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
-    <!-- Limits app discovery to applications that expose a launcher activity. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -33,16 +30,40 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.SameerAppAwake">
 
+        <!-- One launcher only. It routes each Android profile to its saved Smart Guard mode. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".SmartHomeActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".HomeActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ProtectedBrowserActivity"
+            android:exported="false"
+            android:label="Sameer App Awake"
+            android:launchMode="singleTask" />
+
+        <activity
+            android:name=".ProtectedChromeActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="Protected Chrome"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".AppMonitorService"
@@ -51,7 +72,7 @@
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Monitors user-approved foreground app transitions and holds a screen wake lock only while a selected app is active." />
+                android:value="Automatic selected-app display protection using profile-local lifecycle events, a display wake lock, optional timeout lease, and a visible foreground-service notification." />
         </service>
 
         <receiver
@@ -63,6 +84,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-    </application>
 
+        <receiver
+            android:name=".TimeoutWatchdogReceiver"
+            android:enabled="true"
+            android:exported="false" />
+    </application>
 </manifest>

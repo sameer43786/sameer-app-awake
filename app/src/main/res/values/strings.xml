@@ -1,6 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Sameer App Awake</string>
-    <string name="notification_channel_name">App-aware screen monitoring</string>
+    <string name="notification_channel_name">Selected app display protection</string>
     <string name="notification_channel_description">Shows when Sameer App Awake is monitoring selected applications.</string>
+    <string name="accessibility_guard_label">Sameer App Awake Advanced Guard</string>
+    <string name="accessibility_guard_description">Keeps the screen awake only while a user-selected app is foreground. Reads app/window package names only; it does not retrieve screen or webpage content.</string>
 </resources>
