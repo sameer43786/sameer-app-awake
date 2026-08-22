@@ -1,0 +1,106 @@
+name: Build App Awake v1.2.3 APK
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Apply exact v1.2.3 reliability source overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/v123_overlay.part0 tools/v123_overlay.part1 | base64 -d > /tmp/v123_overlay.tar.gz
+          echo '853c02025df53608691271c4f0615a49934052346ec44488c3482c0c1c3af04f  /tmp/v123_overlay.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/v123_overlay.tar.gz -C .
+
+      - name: Verify pinned v1.2.3 configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'compileSdk = 36' app/build.gradle.kts
+          grep -q 'targetSdk = 36' app/build.gradle.kts
+          grep -q 'versionCode = 6' app/build.gradle.kts
+          grep -q 'versionName = "1.2.3"' app/build.gradle.kts
+          grep -q 'version "9.3.1"' build.gradle.kts
+          grep -q 'gradle-9.5.0-bin.zip' gradle/wrapper/gradle-wrapper.properties
+          grep -q 'KEY_SERVICE_HEARTBEAT_EPOCH_MS' app/src/main/java/com/sameerali/appawake/AppPreferences.java
+          grep -q 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/sameerali/appawake/ReliabilityUtils.java
+
+      - name: Install stable Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+          test -f "${ANDROID_HOME}/platforms/android-36/android.jar"
+
+      - name: Run foreground-state unit checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/run_core_tests.sh
+          bash tools/run_core_tests.sh
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace clean assembleDebug
+
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          grep -q "package: name='com.sameerali.appawake'" apk-badging.txt
+          grep -q "versionCode='6'" apk-badging.txt
+          grep -q "versionName='1.2.3'" apk-badging.txt
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Prepare downloadable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sameer-App-Awake-v1.2.3-PrivateSpace-Reliability.apk
+          cp apk-badging.txt dist/
+          cp apk-signature.txt dist/
+          cp apk-sha256.txt dist/
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sameer-App-Awake-v1.2.3-PrivateSpace-Reliability
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
