@@ -82,8 +82,7 @@ public final class SelectedAppLifecycleTracker {
                 ? UNKNOWN_ACTIVITY
                 : className;
 
-        if (eventType == UsageEvents.Event.ACTIVITY_RESUMED
-                || eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+        if (eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
             ActivityState state = packageState.activities.computeIfAbsent(
                     activityKey,
                     ignored -> new ActivityState()
@@ -92,16 +91,6 @@ public final class SelectedAppLifecycleTracker {
                 state.timestampMs = timestampMs;
                 state.resumed = true;
                 packageState.latestResumeMs = Math.max(packageState.latestResumeMs, timestampMs);
-            }
-            return;
-        }
-
-        if (eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
-            for (ActivityState state : packageState.activities.values()) {
-                if (timestampMs >= state.timestampMs) {
-                    state.timestampMs = timestampMs;
-                    state.resumed = false;
-                }
             }
             return;
         }
