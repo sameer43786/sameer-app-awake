@@ -1,0 +1,59 @@
+name: Temporary SAM Bridge UI Probe Build
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-uiprobe:
+    if: github.head_ref == 'sam-ad-shield-build-20260823'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v3
+      - name: Reconstruct source
+        shell: bash
+        run: |
+          base64 --decode .sam_bridge_uiprobe_source.b64 > SAMBridgeUIProbe_Source.zip
+          echo "71d8acbbac40d2cde7f79f2953b4d00297f519bd713b601ac5c0b8da4e8baae4  SAMBridgeUIProbe_Source.zip" | sha256sum -c -
+          unzip -q SAMBridgeUIProbe_Source.zip
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Build host and test APKs
+        working-directory: sam_bridge_uiprobe_src
+        run: gradle clean assembleDebug assembleDebugAndroidTest --stacktrace --no-daemon
+      - name: Validate and stage APKs
+        shell: bash
+        run: |
+          HOST=sam_bridge_uiprobe_src/app/build/outputs/apk/debug/app-debug.apk
+          TEST=sam_bridge_uiprobe_src/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          test -s "$HOST" && test -s "$TEST"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$HOST"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$TEST"
+          cp "$HOST" SAMBridgeUIProbe-host.apk
+          cp "$TEST" SAMBridgeUIProbe-test.apk
+          sha256sum SAMBridgeUIProbe-host.apk SAMBridgeUIProbe-test.apk > SAMBridgeUIProbe-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAMBridgeUIProbe
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            SAMBridgeUIProbe-host.apk
+            SAMBridgeUIProbe-test.apk
+            SAMBridgeUIProbe-SHA256.txt
