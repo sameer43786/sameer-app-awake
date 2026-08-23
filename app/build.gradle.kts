@@ -4,14 +4,14 @@ plugins {
 
 android {
     namespace = "com.sameerali.appawake"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.sameerali.appawake"
         minSdk = 29
-        targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 36
+        versionCode = 22
+        versionName = "2.2.0"
     }
 
     buildTypes {
@@ -32,3 +32,6 @@ android {
         warningsAsErrors = false
     }
 }
+
+// Sameer App Awake Auto Lifecycle Guard v2.2.0
+// By: Sameer Ali | Contact: sameer43786@gmail.com
