@@ -67,6 +67,29 @@ jobs:
           unzip -q SAM_Ad_Shield_v1.0.0_Source.zip
           test -f SAM_Ad_Shield_v1.0.0/app/build.gradle
 
+      - name: Apply Android API compile patches
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield')
+          ui = root / 'Ui.java'
+          s = ui.read_text()
+          old = 'b.setTextAllCaps(false);'
+          new = 'b.setAllCaps(false);'
+          if old not in s:
+              raise SystemExit('Ui.java expected source line not found')
+          ui.write_text(s.replace(old, new, 1))
+
+          main = root / 'MainActivity.java'
+          s = main.read_text()
+          old = 'Settings.ACTION_PRIVATE_DNS_SETTINGS'
+          new = '"android.settings.PRIVATE_DNS_SETTINGS"'
+          if old not in s:
+              raise SystemExit('MainActivity.java expected source line not found')
+          main.write_text(s.replace(old, new, 1))
+          PY
+
       - name: Install Android API 36
         shell: bash
         run: |
