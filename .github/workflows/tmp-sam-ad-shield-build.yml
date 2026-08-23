@@ -39,7 +39,16 @@ jobs:
               .sam_ad_shield_src.part02 \
               .sam_ad_shield_src.part03 \
               .sam_ad_shield_src.part04 \
-              .sam_ad_shield_src.part05 | base64 --decode > SAM_Ad_Shield_v1.0.0_Source.zip
+              .sam_ad_shield_src.part05_01 \
+              .sam_ad_shield_src.part05_02 \
+              .sam_ad_shield_src.part05_03 \
+              .sam_ad_shield_src.part05_04 \
+              .sam_ad_shield_src.part05_05 \
+              .sam_ad_shield_src.part05_06 \
+              .sam_ad_shield_src.part05_07 \
+              .sam_ad_shield_src.part05_08 \
+              .sam_ad_shield_src.part05_09 | base64 --decode > SAM_Ad_Shield_v1.0.0_Source.zip
+          echo "135a8d2f6b27a6087537efe9064676ed42e8236911ec847c329593533a546aa6  SAM_Ad_Shield_v1.0.0_Source.zip" | sha256sum -c -
           unzip -q SAM_Ad_Shield_v1.0.0_Source.zip
           test -f SAM_Ad_Shield_v1.0.0/app/build.gradle
 
