@@ -67,14 +67,19 @@ jobs:
           unzip -q SAM_Ad_Shield_v1.0.0_Source.zip
           test -f SAM_Ad_Shield_v1.0.0/app/build.gradle
 
-      - name: Apply v1.1.0 network and YouTube patch
+      - name: Overlay verified v1.1.0 fixes
         shell: bash
-        working-directory: SAM_Ad_Shield_v1.0.0
         run: |
-          patch -p1 < ../.sam_ad_shield_v110.patch
-          grep -q "versionName '1.1.0'" app/build.gradle
-          grep -q 'ACCESS_NETWORK_STATE' app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java
+          cat .sam_v110_overlay.part01 \
+              .sam_v110_overlay.part02 \
+              .sam_v110_overlay.part03 \
+              .sam_v110_overlay.part04 | base64 --decode > sam_v110_overlay.tar.gz
+          echo "9441cd10c3a1da9780b576560df2a5eb0ccb45e74a2adb0e4f08b628d26399e4  sam_v110_overlay.tar.gz" | sha256sum -c -
+          tar -xzf sam_v110_overlay.tar.gz -C SAM_Ad_Shield_v1.0.0
+          grep -q "versionName '1.1.0'" SAM_Ad_Shield_v1.0.0/app/build.gradle
+          grep -q 'ACCESS_NETWORK_STATE' SAM_Ad_Shield_v1.0.0/app/src/main/AndroidManifest.xml
+          grep -q 'DnsResolver.getInstance().rawQuery' SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/DnsVpnService.java
+          test -f SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java
 
       - name: Install Android API 36
         shell: bash
@@ -107,6 +112,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose SAM_Ad_Shield_v1.1.0.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging SAM_Ad_Shield_v1.1.0.apk | tee /tmp/badging.txt
           grep -q "versionName='1.1.0-debug'" /tmp/badging.txt
+          grep -q "package: name='com.sameerali.samadshield.debug'" /tmp/badging.txt
           sha256sum SAM_Ad_Shield_v1.1.0.apk > SAM_Ad_Shield_v1.1.0.apk.sha256
 
       - name: Upload installable APK
