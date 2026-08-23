@@ -23,13 +23,13 @@ jobs:
         with:
           gradle-version: '8.13'
       - uses: android-actions/setup-android@v3
-      - name: Reconstruct source
+      - name: Verify UI probe source
         shell: bash
         run: |
-          base64 --decode .sam_bridge_uiprobe_source.b64 > SAMBridgeUIProbe_Source.zip
-          sha256sum SAMBridgeUIProbe_Source.zip
-          unzip -t SAMBridgeUIProbe_Source.zip
-          unzip -q SAMBridgeUIProbe_Source.zip
+          test -f sam_bridge_uiprobe_src/settings.gradle
+          test -f sam_bridge_uiprobe_src/app/build.gradle
+          test -f sam_bridge_uiprobe_src/app/src/androidTest/java/com/sameerali/sambridgeuiprobe/YouTubeAssistTest.java
+          grep -q 'class YouTubeAssistTest' sam_bridge_uiprobe_src/app/src/androidTest/java/com/sameerali/sambridgeuiprobe/YouTubeAssistTest.java
       - name: Install Android API 36
         shell: bash
         run: |
