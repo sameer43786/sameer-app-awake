@@ -1,0 +1,1101 @@
+diff -ruN SAM_Ad_Shield_v1.0.0/.github/workflows/build-apk.yml SAM_Ad_Shield_v1.1.0/.github/workflows/build-apk.yml
+--- SAM_Ad_Shield_v1.0.0/.github/workflows/build-apk.yml	2026-08-23 07:40:14.540216097 +0000
++++ SAM_Ad_Shield_v1.1.0/.github/workflows/build-apk.yml	2026-08-23 08:36:33.681543290 +0000
+@@ -20,5 +20,5 @@
+       - name: Upload APK
+         uses: actions/upload-artifact@v4
+         with:
+-          name: SAM-Ad-Shield-v1.0.0-debug
++          name: SAM-Ad-Shield-v1.1.0-debug
+           path: app/build/outputs/apk/debug/app-debug.apk
+diff -ruN SAM_Ad_Shield_v1.0.0/.gitignore SAM_Ad_Shield_v1.1.0/.gitignore
+--- SAM_Ad_Shield_v1.0.0/.gitignore	2026-08-23 07:41:01.640343127 +0000
++++ SAM_Ad_Shield_v1.1.0/.gitignore	2026-08-23 08:36:33.682083983 +0000
+@@ -4,4 +4,4 @@
+ local.properties
+ **/build/
+ *.iml
+-SAM_Ad_Shield_v1.0.0-debug.apk
++SAM_Ad_Shield_v1.1.0-debug.apk
+diff -ruN SAM_Ad_Shield_v1.0.0/BUILD_WINDOWS.bat SAM_Ad_Shield_v1.1.0/BUILD_WINDOWS.bat
+--- SAM_Ad_Shield_v1.0.0/BUILD_WINDOWS.bat	2026-08-23 07:40:14.538346848 +0000
++++ SAM_Ad_Shield_v1.1.0/BUILD_WINDOWS.bat	2026-08-23 08:36:33.681786052 +0000
+@@ -1,9 +1,9 @@
+ @echo off
+ setlocal EnableExtensions
+ chcp 65001 >nul
+-TITLE SAM Ad Shield Android Builder v1.0.0
++TITLE SAM Ad Shield Android Builder v1.1.0
+ echo ============================================================
+-echo SAM Ad Shield v1.0.0 - Android Builder
++echo SAM Ad Shield v1.1.0 - Android Builder
+ echo By: Sameer Ali ^| Contact: sameer43786@gmail.com
+ echo ============================================================
+ 
+@@ -40,7 +40,7 @@
+   exit /b 20
+ )
+ 
+-copy /Y "%ROOT%app\build\outputs\apk\debug\app-debug.apk" "%ROOT%SAM_Ad_Shield_v1.0.0-debug.apk" >nul
++copy /Y "%ROOT%app\build\outputs\apk\debug\app-debug.apk" "%ROOT%SAM_Ad_Shield_v1.1.0-debug.apk" >nul
+ if errorlevel 1 (
+   echo [ERROR] APK was built but could not be copied to the project root.
+   pause
+@@ -49,6 +49,6 @@
+ 
+ echo.
+ echo [SUCCESS] APK created:
+-echo %ROOT%SAM_Ad_Shield_v1.0.0-debug.apk
++echo %ROOT%SAM_Ad_Shield_v1.1.0-debug.apk
+ echo.
+ pause
+diff -ruN SAM_Ad_Shield_v1.0.0/INSTALL_APK_WINDOWS.bat SAM_Ad_Shield_v1.1.0/INSTALL_APK_WINDOWS.bat
+--- SAM_Ad_Shield_v1.0.0/INSTALL_APK_WINDOWS.bat	2026-08-23 07:40:14.539316195 +0000
++++ SAM_Ad_Shield_v1.1.0/INSTALL_APK_WINDOWS.bat	2026-08-23 08:36:33.681336711 +0000
+@@ -1,15 +1,15 @@
+ @echo off
+ setlocal EnableExtensions
+ chcp 65001 >nul
+-TITLE SAM Ad Shield Installer v1.0.0
++TITLE SAM Ad Shield Installer v1.1.0
+ echo ============================================================
+-echo SAM Ad Shield v1.0.0 - Pixel Installer
++echo SAM Ad Shield v1.1.0 - Pixel Installer
+ echo By: Sameer Ali ^| Contact: sameer43786@gmail.com
+ echo ============================================================
+ set "ROOT=%~dp0"
+ if not defined ANDROID_HOME set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
+ set "ADB=%ANDROID_HOME%\platform-tools\adb.exe"
+-set "APK=%ROOT%SAM_Ad_Shield_v1.0.0-debug.apk"
++set "APK=%ROOT%SAM_Ad_Shield_v1.1.0-debug.apk"
+ if not exist "%ADB%" (
+   echo [ERROR] adb.exe not found. Install Android SDK Platform-Tools.
+   pause
+diff -ruN SAM_Ad_Shield_v1.0.0/README.md SAM_Ad_Shield_v1.1.0/README.md
+--- SAM_Ad_Shield_v1.0.0/README.md	2026-08-23 08:32:51.168454332 +0000
++++ SAM_Ad_Shield_v1.1.0/README.md	2026-08-23 08:36:33.682018404 +0000
+@@ -1,4 +1,4 @@
+-# SAM Ad Shield v1.0.0
++# SAM Ad Shield v1.1.0
+ 
+ **By: Sameer Ali | Contact: sameer43786@gmail.com**
+ 
+@@ -49,7 +49,7 @@
+ - Android SDK Build-Tools 36.x.
+ - Java 17 or the Android Studio bundled JBR.
+ 
+-Run `BUILD_WINDOWS.bat`. It creates `SAM_Ad_Shield_v1.0.0-debug.apk` in the project root. The debug APK is automatically signed by the Android Gradle plugin and is suitable for personal sideloading/testing.
++Run `BUILD_WINDOWS.bat`. It creates `SAM_Ad_Shield_v1.1.0-debug.apk` in the project root. The debug APK is automatically signed by the Android Gradle plugin and is suitable for personal sideloading/testing.
+ 
+ To install by USB, enable Developer options and USB debugging on the Pixel, connect the phone, approve the computer, then run `INSTALL_APK_WINDOWS.bat`.
+ 
+diff -ruN SAM_Ad_Shield_v1.0.0/TEST_REPORT.txt SAM_Ad_Shield_v1.1.0/TEST_REPORT.txt
+--- SAM_Ad_Shield_v1.0.0/TEST_REPORT.txt	2026-08-23 08:32:51.388454340 +0000
++++ SAM_Ad_Shield_v1.1.0/TEST_REPORT.txt	2026-08-23 08:36:33.681899669 +0000
+@@ -1,4 +1,4 @@
+-SAM Ad Shield v1.0.0 - Validation Report
++SAM Ad Shield v1.1.0 - Validation Report
+ By: Sameer Ali | Contact: sameer43786@gmail.com
+ 
+ Validated in this build workspace:
+diff -ruN SAM_Ad_Shield_v1.0.0/app/build.gradle SAM_Ad_Shield_v1.1.0/app/build.gradle
+--- SAM_Ad_Shield_v1.0.0/app/build.gradle	2026-08-23 07:40:41.063724205 +0000
++++ SAM_Ad_Shield_v1.1.0/app/build.gradle	2026-08-23 08:35:50.165693639 +0000
+@@ -10,8 +10,8 @@
+         applicationId 'com.sameerali.samadshield'
+         minSdk 29
+         targetSdk 36
+-        versionCode 10000
+-        versionName '1.0.0'
++        versionCode 10100
++        versionName '1.1.0'
+     }
+ 
+     buildTypes {
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/AndroidManifest.xml SAM_Ad_Shield_v1.1.0/app/src/main/AndroidManifest.xml
+--- SAM_Ad_Shield_v1.0.0/app/src/main/AndroidManifest.xml	2026-08-23 07:40:41.063679952 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/AndroidManifest.xml	2026-08-23 08:35:50.165520649 +0000
+@@ -2,6 +2,7 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+@@ -35,6 +36,20 @@
+             </intent-filter>
+         </activity>
+ 
++
++        <service
++            android:name=".YouTubeAdAssistService"
++            android:exported="true"
++            android:label="SAM Ad Shield YouTube Assist"
++            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
++            <intent-filter>
++                <action android:name="android.accessibilityservice.AccessibilityService" />
++            </intent-filter>
++            <meta-data
++                android:name="android.accessibilityservice"
++                android:resource="@xml/youtube_ad_assist_service" />
++        </service>
++
+         <service
+             android:name=".DnsVpnService"
+             android:exported="false"
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/BlocklistManager.java SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/BlocklistManager.java
+--- SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/BlocklistManager.java	2026-08-23 07:35:40.720670691 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/BlocklistManager.java	2026-08-23 08:36:33.680904690 +0000
+@@ -86,7 +86,7 @@
+                 connection.setConnectTimeout(8_000);
+                 connection.setReadTimeout(12_000);
+                 connection.setUseCaches(false);
+-                connection.setRequestProperty("User-Agent", "SAM-Ad-Shield/1.0.0 Android");
++                connection.setRequestProperty("User-Agent", "SAM-Ad-Shield/1.1.0 Android");
+ 
+                 int code = connection.getResponseCode();
+                 if (code < 200 || code >= 300) {
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/Diagnostics.java SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/Diagnostics.java
+--- SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/Diagnostics.java	2026-08-23 07:35:40.723900113 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/Diagnostics.java	2026-08-23 08:36:33.681162267 +0000
+@@ -56,7 +56,7 @@
+         DnsVpnService.Stats stats = DnsVpnService.getStatsSnapshot();
+         File log = new File(context.getFilesDir(), Constants.DIAGNOSTIC_FILE_NAME);
+         StringBuilder out = new StringBuilder();
+-        out.append("SAM Ad Shield v1.0.0 Diagnostics\n");
++        out.append("SAM Ad Shield v1.1.0 Diagnostics\n");
+         out.append("By: Sameer Ali | Contact: sameer43786@gmail.com\n");
+         out.append("Generated: ").append(TS.format(new Date())).append('\n');
+         out.append("Android SDK: ").append(Build.VERSION.SDK_INT).append('\n');
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/DnsVpnService.java SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/DnsVpnService.java
+--- SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/DnsVpnService.java	2026-08-23 07:38:52.331170939 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/DnsVpnService.java	2026-08-23 08:35:50.163314299 +0000
+@@ -12,21 +12,19 @@
+ import android.content.SharedPreferences;
+ import android.content.pm.PackageManager;
+ import android.content.pm.ServiceInfo;
+ import android.net.ConnectivityManager;
++import android.net.DnsResolver;
+ import android.net.LinkProperties;
+ import android.net.Network;
+ import android.net.NetworkCapabilities;
+ import android.net.VpnService;
+ import android.os.Build;
+ import android.os.ParcelFileDescriptor;
+ import android.system.OsConstants;
+ 
+ import java.io.FileInputStream;
+ import java.io.FileOutputStream;
+ import java.io.IOException;
+ import java.net.DatagramPacket;
+ import java.net.DatagramSocket;
+ import java.net.InetAddress;
+-import java.net.InetSocketAddress;
+-import java.net.Socket;
+-import java.io.DataInputStream;
+-import java.io.DataOutputStream;
+ import java.util.ArrayList;
++import java.util.Collections;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Set;
+ import java.util.concurrent.ArrayBlockingQueue;
+ import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.CountDownLatch;
+ import java.util.concurrent.ThreadPoolExecutor;
+ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.atomic.AtomicLong;
++import java.util.concurrent.atomic.AtomicReference;
+ 
+ /**
+- * Battery-friendly DNS-only local VPN.
++ * SAM Ad Shield v1.1 DNS engine.
+  *
+- * Only packets addressed to 10.111.222.1/32 are routed into this service. All
+- * normal TCP/UDP application traffic continues over Android's underlying network.
+- * The TUN descriptor is blocking, so the reader thread consumes no CPU while idle.
++ * Design goals:
++ * 1) Only the synthetic DNS address is routed through the local VPN, so ordinary
++ *    app traffic never traverses a userspace forwarding loop.
++ * 2) Android's own DnsResolver is the primary upstream path. This is important on
++ *    modern Pixel/Android builds because it follows Android's network-specific DNS
++ *    policy, including validated networks and Private DNS, instead of trying to
++ *    reinvent resolver selection with raw UDP sockets.
++ * 3) The former "strict anti-bypass" IP routes are intentionally disabled. Routing
++ *    public resolver IPs into a DNS-only TUN can break Android Private DNS/DoT/DoH
++ *    validation and can trigger the system "Private DNS server cannot be accessed"
++ *    warning. Local domain filtering remains active without those routes.
+  */
+ public final class DnsVpnService extends VpnService {
+     private static volatile DnsVpnService instance;
+ 
+     private final Object tunnelLock = new Object();
+     private final Object writeLock = new Object();
+-    private final Map<Thread, SocketHolder> upstreamSockets = new ConcurrentHashMap<>();
++    private final Map<Thread, SocketHolder> legacySockets = new ConcurrentHashMap<>();
+ 
+-    private volatile DomainMatcher matcher = new DomainMatcher(java.util.Collections.emptySet(), java.util.Collections.emptySet());
++    private volatile DomainMatcher matcher = new DomainMatcher(Collections.emptySet(), Collections.emptySet());
+     private volatile boolean tunnelRunning = false;
+     private ParcelFileDescriptor tunInterface;
+     private FileInputStream tunInput;
+@@ -68,8 +66,18 @@
+         blocked.set(p.getLong(Constants.KEY_TOTAL_BLOCKED, 0L));
+         errors.set(p.getLong(Constants.KEY_TOTAL_ERRORS, 0L));
++
++        // v1.0 could route well-known resolver IPs into the DNS-only TUN. That can
++        // interfere with Android Private DNS validation, so migrate all installs to
++        // the safe behavior automatically.
++        if (p.getBoolean(Constants.KEY_STRICT_DNS, false)) {
++            p.edit().putBoolean(Constants.KEY_STRICT_DNS, false).apply();
++            Diagnostics.log(this, "Migrated legacy strict DNS mode to compatibility-safe mode");
++        }
++
+         matcher = BlocklistManager.load(this);
+         createNotificationChannel();
+-        Diagnostics.log(this, "VPN service created");
++        Diagnostics.log(this, "VPN service created (v1.1 resolver engine)");
+     }
+ 
+     @Override
+@@ -121,9 +129,7 @@
+             return Service.START_NOT_STICKY;
+         }
+ 
+-        // Android grants VPN consent through VpnService.prepare() in MainActivity.
+         if (VpnService.prepare(this) != null) {
+             Diagnostics.log(this, "VPN permission unavailable; service cannot establish tunnel");
+             stopSelf();
+@@ -132,9 +138,8 @@
+         }
+ 
+         startForegroundCompat();
+-        if (!tunnelRunning) {
+-            startTunnel();
+-        }
++        if (!tunnelRunning) startTunnel();
+         return Service.START_STICKY;
+     }
+ 
+@@ -153,6 +158,9 @@
+             try {
+                 matcher = BlocklistManager.load(this);
+ 
++                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
++                Network underlying = findUnderlyingNetwork(cm);
++
+                 Builder builder = new Builder()
+                         .setSession("SAM Ad Shield")
+                         .setBlocking(true)
+@@ -164,8 +172,15 @@
+                         .allowFamily(OsConstants.AF_INET6)
+                         .setMetered(false);
+ 
++                // Explicitly tell Android which physical network is underneath this
++                // local VPN. This helps Android keep validation/captive-portal state
++                // associated with Wi-Fi/cellular rather than the synthetic DNS tunnel.
++                if (underlying != null) {
++                    builder.setUnderlyingNetworks(new Network[] { underlying });
++                }
++
+                 applyExcludedApps(builder);
+-                applyStrictDnsRoutes(builder);
+ 
+                 tunInterface = builder.establish();
+-                if (tunInterface == null) {
+-                    throw new IOException("VpnService.Builder.establish() returned null");
+-                }
++                if (tunInterface == null) throw new IOException("VpnService.Builder.establish() returned null");
++
+                 tunInput = new FileInputStream(tunInterface.getFileDescriptor());
+                 tunOutput = new FileOutputStream(tunInterface.getFileDescriptor());
+ 
+@@ -193,7 +208,7 @@
+ 
+     private void applyExcludedApps(Builder builder) {
+         SharedPreferences prefs = getSharedPreferences(Constants.PREFS, MODE_PRIVATE);
+-        Set<String> excluded = prefs.getStringSet(Constants.KEY_EXCLUDED_APPS, java.util.Collections.emptySet());
++        Set<String> excluded = prefs.getStringSet(Constants.KEY_EXCLUDED_APPS, Collections.emptySet());
+         for (String packageName : excluded) {
+             if (packageName == null || packageName.equals(getPackageName())) continue;
+             try {
+@@ -201,39 +216,14 @@
+                 builder.addDisallowedApplication(packageName);
+             } catch (PackageManager.NameNotFoundException ignored) {
+-                // App was uninstalled after being placed on the exclusion list.
++                // The app was uninstalled after being put on the exclusion list.
+             }
+         }
+     }
+ 
+-
+-    private void applyStrictDnsRoutes(Builder builder) {
+-        boolean strict = getSharedPreferences(Constants.PREFS, MODE_PRIVATE)
+-                .getBoolean(Constants.KEY_STRICT_DNS, false);
+-        if (!strict) return;
+-
+-        // Route common public resolver addresses into the TUN. UDP/53 queries are
+-        // filtered normally; direct DoH/DoT connections to these IPs are dropped.
+-        // The service's own upstream sockets are protected, so they bypass these routes.
+-        String[] ipv4 = {
+-                "8.8.8.8", "8.8.4.4",
+-                "1.1.1.1", "1.0.0.1",
+-                "9.9.9.9", "149.112.112.112",
+-                "94.140.14.14", "94.140.15.15",
+-                "208.67.222.222", "208.67.220.220"
+-        };
+-        String[] ipv6 = {
+-                "2001:4860:4860::8888", "2001:4860:4860::8844",
+-                "2606:4700:4700::1111", "2606:4700:4700::1001",
+-                "2620:fe::fe", "2620:fe::9"
+-        };
+-        for (String ip : ipv4) builder.addRoute(ip, 32);
+-        for (String ip : ipv6) builder.addRoute(ip, 128);
+-    }
+-
+     private void readTunLoop() {
+         byte[] packet = new byte[32767];
+         while (tunnelRunning) {
+@@ -242,8 +232,7 @@
+                 int length = tunInput.read(packet);
+                 if (length <= 0) continue;
+                 DnsPacket.Query query = DnsPacket.parseUdpDnsQuery(packet, length);
+-                if (query == null) {
+-                    // The configured /32 route should make non-DNS packets extremely rare.
+-                    continue;
+-                }
++                if (query == null) continue;
+ 
+                 long count = queries.incrementAndGet();
+                 DomainMatcher currentMatcher = matcher;
+@@ -253,17 +242,14 @@
+                     dnsWorkers.execute(() -> resolveAndReply(query));
+                 }
+ 
+-                if ((count % 250L) == 0L) {
+-                    persistCounters();
+-                }
++                if ((count % 250L) == 0L) persistCounters();
+             } catch (IOException e) {
+                 if (tunnelRunning) {
+                     errors.incrementAndGet();
+                     Diagnostics.log(this, "TUN read error: " + e.getClass().getSimpleName());
+                 }
+                 break;
+             } catch (Exception e) {
+                 errors.incrementAndGet();
+-                Diagnostics.log(this, "TUN processing error: " + e);
++                Diagnostics.log(this, "TUN processing error: " + e.getClass().getSimpleName());
+             }
+         }
+     }
+@@ -276,14 +262,12 @@
+         try {
+             byte[] response = resolveUpstream(query.dnsPayload);
+             if (response == null || response.length < 12) {
+                 errors.incrementAndGet();
+                 return;
+             }
+ 
+-            DomainMatcher currentMatcher = matcher;
+-            if (DnsPacket.containsBlockedCname(response, currentMatcher)) {
++            if (DnsPacket.containsBlockedCname(response, matcher)) {
+                 blocked.incrementAndGet();
+                 response = DnsPacket.makeNxDomain(query.dnsPayload);
+             }
+@@ -295,131 +279,209 @@
+         if (!tunnelRunning || tunOutput == null || dnsResponse == null || dnsResponse.length == 0) return;
+         byte[] reply = DnsPacket.buildIpv4UdpReply(query, dnsResponse);
+         synchronized (writeLock) {
+-            if (tunnelRunning && tunOutput != null) {
+-                tunOutput.write(reply);
+-            }
++            if (tunnelRunning && tunOutput != null) tunOutput.write(reply);
+         }
+     }
+ 
++    /**
++     * Resolve a raw DNS message. Android's DnsResolver is the primary path because
++     * it follows the OS resolver policy and is compatible with Private DNS.
++     * Legacy/custom UDP resolvers are used only when Private DNS is not active.
++     */
+     private byte[] resolveUpstream(byte[] dnsQuery) {
+-        List<UpstreamTarget> targets = getUpstreamTargets();
++        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
++        Network underlying = findUnderlyingNetwork(cm);
++        boolean privateDns = isPrivateDnsActive(cm, underlying);
++        SharedPreferences p = getSharedPreferences(Constants.PREFS, MODE_PRIVATE);
++        String mode = p.getString(Constants.KEY_UPSTREAM_MODE, Constants.UPSTREAM_SYSTEM);
++
++        // If the user selected a custom resolver and Android Private DNS is not
++        // active, honor it first. When Private DNS is active, Android's resolver is
++        // mandatory to avoid leaking plaintext DNS and to avoid validation errors.
++        if (!Constants.UPSTREAM_SYSTEM.equals(mode) && !privateDns) {
++            byte[] custom = resolveViaLegacyTargets(dnsQuery, customTargets(mode, underlying));
++            if (custom != null) return custom;
++        }
++
++        byte[] system = resolveViaAndroidDns(underlying, dnsQuery);
++        if (system != null) return system;
++
++        // Last-resort fallback for networks with no Private DNS. This path is useful
++        // on older captive portals or unusual routers whose Android resolver service
++        // is temporarily unavailable.
++        if (!privateDns) {
++            byte[] fallback = resolveViaLegacyTargets(dnsQuery, systemTargets(cm, underlying));
++            if (fallback != null) return fallback;
++        }
++
++        return null;
++    }
++
++    private byte[] resolveViaAndroidDns(Network network, byte[] dnsQuery) {
++        final CountDownLatch latch = new CountDownLatch(1);
++        final AtomicReference<byte[]> answer = new AtomicReference<>();
++        try {
++            DnsResolver.getInstance().rawQuery(
++                    network,
++                    dnsQuery,
++                    DnsResolver.FLAG_EMPTY,
++                    Runnable::run,
++                    null,
++                    new DnsResolver.Callback<byte[]>() {
++                        @Override
++                        public void onAnswer(byte[] response, int rcode) {
++                            if (response != null && response.length >= 12) answer.set(response);
++                            latch.countDown();
++                        }
++
++                        @Override
++                        public void onError(DnsResolver.DnsException error) {
++                            latch.countDown();
++                        }
++                    });
++            latch.await(4200L, TimeUnit.MILLISECONDS);
++            return answer.get();
++        } catch (Exception ignored) {
++            return null;
++        }
++    }
++
++    private List<UpstreamTarget> customTargets(String mode, Network network) {
++        List<UpstreamTarget> result = new ArrayList<>();
++        try {
++            if (Constants.UPSTREAM_ADGUARD.equals(mode)) {
++                result.add(new UpstreamTarget(InetAddress.getByName("94.140.14.14"), network));
++                result.add(new UpstreamTarget(InetAddress.getByName("94.140.15.15"), network));
++            } else if (Constants.UPSTREAM_CLOUDFLARE.equals(mode)) {
++                result.add(new UpstreamTarget(InetAddress.getByName("1.1.1.1"), network));
++                result.add(new UpstreamTarget(InetAddress.getByName("1.0.0.1"), network));
++            } else if (Constants.UPSTREAM_QUAD9.equals(mode)) {
++                result.add(new UpstreamTarget(InetAddress.getByName("9.9.9.9"), network));
++                result.add(new UpstreamTarget(InetAddress.getByName("149.112.112.112"), network));
++            }
++        } catch (Exception ignored) {
++        }
++        return result;
++    }
++
++    private List<UpstreamTarget> systemTargets(ConnectivityManager cm, Network network) {
++        List<UpstreamTarget> result = new ArrayList<>();
++        if (cm != null && network != null) {
++            try {
++                LinkProperties lp = cm.getLinkProperties(network);
++                if (lp != null) {
++                    for (InetAddress dns : lp.getDnsServers()) result.add(new UpstreamTarget(dns, network));
++                }
++            } catch (SecurityException ignored) {
++            }
++        }
++        try {
++            result.add(new UpstreamTarget(InetAddress.getByName("1.1.1.1"), network));
++            result.add(new UpstreamTarget(InetAddress.getByName("9.9.9.9"), network));
++        } catch (Exception ignored) {
++        }
++        return result;
++    }
++
++    private byte[] resolveViaLegacyTargets(byte[] dnsQuery, List<UpstreamTarget> targets) {
+         for (UpstreamTarget target : targets) {
+             try {
+-                DatagramSocket socket = getOrCreateSocket(target.network);
++                DatagramSocket socket = getOrCreateLegacySocket(target.network);
+                 byte[] response = sendAndReceive(socket, target.address, dnsQuery);
+-                if (response != null && response.length >= 12 && (response[2] & 0x02) != 0) {
+-                    // Upstream set the DNS TC bit. Fetch the complete response over TCP
+-                    // and return it locally over the high-MTU virtual interface.
+-                    byte[] full = sendAndReceiveTcp(target, dnsQuery);
+-                    if (full != null) response = full;
+-                }
+                 if (response != null) return response;
+             } catch (Exception ignored) {
+-                invalidateSocketForCurrentThread();
++                invalidateLegacySocketForCurrentThread();
+             }
+         }
+-        Diagnostics.log(this, "All DNS upstream targets failed");
+         return null;
+     }
+ 
+@@ -428,58 +490,30 @@
+-        for (int attempt = 0; attempt < 3; attempt++) {
++        for (int attempt = 0; attempt < 2; attempt++) {
+             byte[] buffer = new byte[8192];
+             DatagramPacket reply = new DatagramPacket(buffer, buffer.length);
+             socket.receive(reply);
+             if (!reply.getAddress().equals(server) || reply.getLength() < 12) continue;
+             int responseId = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
+             if (responseId != expectedId) continue;
+             byte[] result = new byte[reply.getLength()];
+             System.arraycopy(buffer, 0, result, 0, reply.getLength());
+             return result;
+         }
+         return null;
+     }
+ 
+-
+-    private byte[] sendAndReceiveTcp(UpstreamTarget target, byte[] query) {
+-        Socket socket = new Socket();
+-        try {
+-            protect(socket);
+-            if (target.network != null) target.network.bindSocket(socket);
+-            socket.connect(new InetSocketAddress(target.address, 53), 2400);
+-            socket.setSoTimeout(3000);
+-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+-            DataInputStream in = new DataInputStream(socket.getInputStream());
+-            out.writeShort(query.length);
+-            out.write(query);
+-            out.flush();
+-            int length = in.readUnsignedShort();
+-            if (length < 12 || length > 16_000) return null;
+-            byte[] response = new byte[length];
+-            in.readFully(response);
+-            return response;
+-        } catch (Exception ignored) {
+-            return null;
+-        } finally {
+-            try { socket.close(); } catch (Exception ignored) {}
+-        }
+-    }
+-
+-    private DatagramSocket getOrCreateSocket(Network network) throws IOException {
++    private DatagramSocket getOrCreateLegacySocket(Network network) throws IOException {
+         Thread thread = Thread.currentThread();
+-        SocketHolder holder = upstreamSockets.get(thread);
++        SocketHolder holder = legacySockets.get(thread);
+         if (holder != null && !holder.socket.isClosed() && sameNetwork(holder.network, network)) {
+             return holder.socket;
+         }
+         if (holder != null) {
+             holder.socket.close();
+-            upstreamSockets.remove(thread);
++            legacySockets.remove(thread);
+         }
+ 
+         DatagramSocket socket = new DatagramSocket();
+-        socket.setSoTimeout(2400);
++        socket.setSoTimeout(1800);
+         socket.setReceiveBufferSize(16 * 1024);
+         socket.setSendBufferSize(8 * 1024);
+-        protect(socket);
+-        if (network != null) {
+-            network.bindSocket(socket);
++        if (!protect(socket)) {
++            socket.close();
++            throw new IOException("Unable to protect upstream DNS socket from VPN");
+         }
+-        upstreamSockets.put(thread, new SocketHolder(socket, network));
++        if (network != null) network.bindSocket(socket);
++        legacySockets.put(thread, new SocketHolder(socket, network));
+         return socket;
+     }
+ 
+-    private void invalidateSocketForCurrentThread() {
+-        SocketHolder holder = upstreamSockets.remove(Thread.currentThread());
++    private void invalidateLegacySocketForCurrentThread() {
++        SocketHolder holder = legacySockets.remove(Thread.currentThread());
+         if (holder != null) holder.socket.close();
+     }
+ 
+@@ -487,55 +521,38 @@
+         return a == b || (a != null && a.equals(b));
+     }
+ 
+-    private List<UpstreamTarget> getUpstreamTargets() {
+-        List<UpstreamTarget> targets = new ArrayList<>();
+-        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+-        Network underlying = findUnderlyingNetwork(cm);
+-        SharedPreferences p = getSharedPreferences(Constants.PREFS, MODE_PRIVATE);
+-        String mode = p.getString(Constants.KEY_UPSTREAM_MODE, Constants.UPSTREAM_SYSTEM);
+-
+-        if (Constants.UPSTREAM_SYSTEM.equals(mode) && underlying != null) {
++    private static boolean isPrivateDnsActive(ConnectivityManager cm, Network network) {
++        if (cm == null || network == null) return false;
++        try {
+             LinkProperties lp = cm.getLinkProperties(underlying);
+-            if (lp != null) {
+-                for (InetAddress dns : lp.getDnsServers()) {
+-                    targets.add(new UpstreamTarget(dns, underlying));
+-                }
+-            }
+-        }
+-
+-        try {
+-            if (Constants.UPSTREAM_ADGUARD.equals(mode)) {
+-                targets.add(new UpstreamTarget(InetAddress.getByName("94.140.14.14"), underlying));
+-                targets.add(new UpstreamTarget(InetAddress.getByName("94.140.15.15"), underlying));
+-            } else if (Constants.UPSTREAM_CLOUDFLARE.equals(mode)) {
+-                targets.add(new UpstreamTarget(InetAddress.getByName("1.1.1.1"), underlying));
+-                targets.add(new UpstreamTarget(InetAddress.getByName("1.0.0.1"), underlying));
+-            } else if (Constants.UPSTREAM_QUAD9.equals(mode)) {
+-                targets.add(new UpstreamTarget(InetAddress.getByName("9.9.9.9"), underlying));
+-                targets.add(new UpstreamTarget(InetAddress.getByName("149.112.112.112"), underlying));
+-            } else {
+-                // System DNS is most compatible on captive portals and restrictive Wi-Fi.
+-                // Public fallbacks are used only when the network resolver fails.
+-                targets.add(new UpstreamTarget(InetAddress.getByName("9.9.9.9"), underlying));
+-                targets.add(new UpstreamTarget(InetAddress.getByName("1.1.1.1"), underlying));
+-            }
+-        } catch (Exception ignored) {
++            return lp != null && lp.isPrivateDnsActive();
++        } catch (SecurityException ignored) {
++            return false;
+         }
+-        return targets;
+     }
+ 
+     private static Network findUnderlyingNetwork(ConnectivityManager cm) {
+         if (cm == null) return null;
+-        Network fallback = null;
+-        for (Network network : cm.getAllNetworks()) {
+-            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+-            if (caps == null) continue;
+-            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+-            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
+-            if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+-                return network;
++        try {
++            Network fallback = null;
++            for (Network network : cm.getAllNetworks()) {
++                NetworkCapabilities caps = cm.getNetworkCapabilities(network);
++                if (caps == null) continue;
++                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
++                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
++                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return network;
++                if (fallback == null) fallback = network;
+             }
+-            if (fallback == null) fallback = network;
++            return fallback;
++        } catch (SecurityException ignored) {
++            return null;
+         }
+-        return fallback;
+     }
+ 
+     private void stopTunnel(boolean removeForeground) {
+@@ -555,10 +572,9 @@
+                 dnsWorkers.shutdownNow();
+                 dnsWorkers = null;
+             }
+-            for (SocketHolder holder : upstreamSockets.values()) {
++            for (SocketHolder holder : legacySockets.values()) {
+                 try { holder.socket.close(); } catch (Exception ignored) {}
+             }
+-            upstreamSockets.clear();
++            legacySockets.clear();
+ 
+-            if (readerThread != null && readerThread != Thread.currentThread()) {
+-                readerThread.interrupt();
+-            }
++            if (readerThread != null && readerThread != Thread.currentThread()) readerThread.interrupt();
+             readerThread = null;
+             persistCounters();
+ 
+-            if (removeForeground) {
+-                stopForeground(STOP_FOREGROUND_REMOVE);
+-            }
++            if (removeForeground) stopForeground(STOP_FOREGROUND_REMOVE);
+         }
+     }
+@@ -583,6 +599,8 @@
+                 NotificationManager.IMPORTANCE_LOW);
+         channel.setDescription(getString(R.string.notification_channel_desc));
+         channel.setShowBadge(false);
++        channel.enableVibration(false);
++        channel.setSound(null, null);
+         manager.createNotificationChannel(channel);
+     }
+ 
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/MainActivity.java SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/MainActivity.java
+--- SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/MainActivity.java	2026-08-23 07:38:52.335684728 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/MainActivity.java	2026-08-23 08:36:14.843215951 +0000
+@@ -3,6 +3,7 @@
+ import android.Manifest;
+ import android.app.Activity;
+ import android.content.Intent;
++import android.content.ComponentName;
+ import android.content.SharedPreferences;
+ import android.content.pm.PackageManager;
+ import android.net.VpnService;
+@@ -45,6 +46,7 @@
+     private Button protectionButton;
+     private Button updateButton;
+     private Spinner upstreamSpinner;
++    private TextView youtubeAssistStatus;
+     private boolean spinnerReady = false;
+ 
+     private final Runnable refreshRunnable = new Runnable() {
+@@ -57,12 +59,12 @@
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+         prefs = getSharedPreferences(Constants.PREFS, MODE_PRIVATE);
+-        if (!prefs.contains(Constants.KEY_AUTO_UPDATE) || !prefs.contains(Constants.KEY_STRICT_DNS)) {
+-            prefs.edit()
+-                    .putBoolean(Constants.KEY_AUTO_UPDATE, prefs.getBoolean(Constants.KEY_AUTO_UPDATE, true))
+-                    .putBoolean(Constants.KEY_STRICT_DNS, prefs.getBoolean(Constants.KEY_STRICT_DNS, false))
+-                    .apply();
+-        }
++        // v1.1 migration: the old strict resolver-IP routes could interfere with
++        // Android Private DNS validation. They are permanently disabled now.
++        prefs.edit()
++                .putBoolean(Constants.KEY_AUTO_UPDATE, prefs.getBoolean(Constants.KEY_AUTO_UPDATE, true))
++                .putBoolean(Constants.KEY_STRICT_DNS, false)
++                .apply();
+         setContentView(buildUi());
+         requestNotificationPermissionIfNeeded();
+         maybeAutoUpdate();
+@@ -86,7 +88,7 @@
+         root.addView(title);
+         TextView brand = Ui.text(this, "By: Sameer Ali | Contact: sameer43786@gmail.com", 12, false, getColor(R.color.text_secondary));
+         root.addView(brand);
+-        TextView subtitle = Ui.text(this, "System-wide, low-power DNS ad and tracker blocking for Android", 14, false, getColor(R.color.text_secondary));
++        TextView subtitle = Ui.text(this, "v1.1.0 · System-wide low-power DNS blocking + optional YouTube Skip Assist", 14, false, getColor(R.color.text_secondary));
+         subtitle.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 16));
+         root.addView(subtitle);
+ 
+@@ -107,7 +109,7 @@
+         LinearLayout blockCard = Ui.card(this);
+         blockCard.addView(Ui.text(this, "Blocking engine", 17, true, getColor(R.color.text_primary)));
+         TextView engine = Ui.text(this,
+-                "Only DNS packets enter the local VPN. Normal app traffic bypasses the tunnel, so the service avoids continuous packet forwarding and TLS inspection.",
++                "Only DNS packets enter the local VPN. Normal app traffic bypasses the tunnel. v1.1 uses Android's own network-aware resolver first, including Private DNS compatibility, instead of forcing resolver-IP routes.",
+                 13, false, getColor(R.color.text_secondary));
+         engine.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 6));
+         blockCard.addView(engine);
+@@ -115,7 +117,7 @@
+         upstreamSpinner = new Spinner(this);
+         String[] upstreamLabels = new String[] {
+-                "System network DNS (recommended)",
++                "Android secure system resolver (recommended)",
+                 "Quad9",
+                 "Cloudflare",
+                 "AdGuard DNS (extra upstream blocking)"
+@@ -154,25 +156,11 @@
+                 prefs.edit().putBoolean(Constants.KEY_AUTO_UPDATE, isChecked).apply());
+         blockCard.addView(autoUpdate);
+ 
+-        Switch strictDns = new Switch(this);
+-        strictDns.setText("Strict anti-bypass for common public DNS / DoH endpoints");
+-        strictDns.setTextColor(getColor(R.color.text_primary));
+-        strictDns.setTextSize(13);
+-        strictDns.setChecked(prefs.getBoolean(Constants.KEY_STRICT_DNS, false));
+-        strictDns.setPadding(0, Ui.dp(this, 8), 0, 0);
+-        strictDns.setOnCheckedChangeListener((buttonView, isChecked) -> {
+-            prefs.edit().putBoolean(Constants.KEY_STRICT_DNS, isChecked).apply();
+-            restartIfActive();
+-        });
+-        blockCard.addView(strictDns);
+-        TextView strictNote = Ui.text(this,
+-                "Strict mode blocks direct connections to several well-known public resolver IPs. Leave it off for the lowest power use; enable it when an app bypasses normal DNS blocking.",
++        TextView compatibilityNote = Ui.text(this,
++                "Compatibility-safe mode is always on. The old strict resolver-IP interception has been removed because it could trigger Android's ‘Private DNS server cannot be accessed’ warning and disrupt internet access.",
+                 12, false, getColor(R.color.text_secondary));
+-        strictNote.setPadding(0, Ui.dp(this, 4), 0, 0);
+-        blockCard.addView(strictNote);
++        compatibilityNote.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 4));
++        blockCard.addView(compatibilityNote);
+ 
+         Button rules = Ui.button(this, "Custom block / allow rules", false);
+         rules.setOnClickListener(v -> startActivity(new Intent(this, DomainRulesActivity.class)));
+@@ -190,15 +178,33 @@
+         vpnSettings.setOnClickListener(v -> openSettings(Settings.ACTION_VPN_SETTINGS));
+         systemCard.addView(vpnSettings);
+         Button privateDns = Ui.button(this, "Open Private DNS settings", false);
+-        privateDns.setOnClickListener(v -> openSettings(Settings.ACTION_PRIVATE_DNS_SETTINGS));
++        privateDns.setOnClickListener(v -> openSettings("android.settings.PRIVATE_DNS_SETTINGS"));
+         systemCard.addView(privateDns);
+         TextView dnsNote = Ui.text(this,
+-                "For best compatibility, leave Android Private DNS on Automatic. Apps that hard-code their own encrypted DNS can still bypass DNS-domain blocking.",
++                "Private DNS is supported in v1.1. Leave it on Automatic or keep your configured provider. SAM Ad Shield no longer blackholes common DoT/DoH resolver addresses, so Android network validation remains intact.",
+                 12, false, getColor(R.color.text_secondary));
+         dnsNote.setPadding(0, Ui.dp(this, 8), 0, 0);
+         systemCard.addView(dnsNote);
+         root.addView(systemCard);
+ 
++        LinearLayout youtubeCard = Ui.card(this);
++        youtubeCard.addView(Ui.text(this, "YouTube ad handling", 17, true, getColor(R.color.text_primary)));
++        youtubeAssistStatus = Ui.text(this, "YouTube Skip Assist: checking…", 13, true, getColor(R.color.text_secondary));
++        youtubeAssistStatus.setPadding(0, Ui.dp(this, 6), 0, 0);
++        youtubeCard.addView(youtubeAssistStatus);
++        TextView ytNote = Ui.text(this,
++                "YouTube often serves ads from the same first-party video infrastructure as normal content, so DNS filtering alone cannot safely block those hosts. Optional Skip Assist is event-driven and taps YouTube's own Skip ad control as soon as it appears; it does not continuously poll the screen.",
++                12, false, getColor(R.color.text_secondary));
++        ytNote.setPadding(0, Ui.dp(this, 6), 0, 0);
++        youtubeCard.addView(ytNote);
++        Button ytAccess = Ui.button(this, "Enable / manage YouTube Skip Assist", false);
++        ytAccess.setOnClickListener(v -> openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS));
++        youtubeCard.addView(ytAccess);
++        root.addView(youtubeCard);
++
+         LinearLayout toolsCard = Ui.card(this);
+         toolsCard.addView(Ui.text(this, "Tools", 17, true, getColor(R.color.text_primary)));
+         Button test = Ui.button(this, "Run blocker self-test", false);
+@@ -212,7 +218,7 @@
+         LinearLayout limitsCard = Ui.card(this);
+         limitsCard.addView(Ui.text(this, "Coverage limits", 17, true, getColor(R.color.text_primary)));
+         limitsCard.addView(Ui.text(this,
+-                "DNS blocking removes ads and trackers hosted on identifiable ad domains. It does not reliably remove first-party ads delivered from the same domain as content, embedded video ads, or traffic from apps that use hard-coded IP addresses or private encrypted DNS. Examples include some YouTube, Instagram, and TikTok in-feed/video ads.",
++                "DNS blocking removes ads and trackers hosted on identifiable ad domains. YouTube Skip Assist additionally handles skippable YouTube ads when the Skip control exists. No normal non-root Android app can guarantee removal of every first-party or unskippable YouTube ad without modifying/intercepting YouTube itself.",
+                 13, false, getColor(R.color.text_secondary)));
+         root.addView(limitsCard);
+ 
+@@ -253,6 +259,11 @@
+         statusText.setText(active ? "ACTIVE" : "OFF");
+         statusText.setTextColor(getColor(active ? R.color.accent : R.color.danger));
+         protectionButton.setText(active ? "Disable protection" : "Enable protection");
++        if (youtubeAssistStatus != null) {
++            boolean yt = isYouTubeAssistEnabled();
++            youtubeAssistStatus.setText(yt ? "YouTube Skip Assist: ON" : "YouTube Skip Assist: OFF");
++            youtubeAssistStatus.setTextColor(getColor(yt ? R.color.accent : R.color.text_secondary));
++        }
+ 
+         long q = stats.queries > 0 ? stats.queries : prefs.getLong(Constants.KEY_TOTAL_QUERIES, 0L);
+         long b = stats.blocked > 0 ? stats.blocked : prefs.getLong(Constants.KEY_TOTAL_BLOCKED, 0L);
+@@ -341,6 +352,22 @@
+         }
+     }
+ 
++    private boolean isYouTubeAssistEnabled() {
++        try {
++            String enabled = Settings.Secure.getString(
++                    getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
++            if (enabled == null || enabled.isEmpty()) return false;
++            String target = new ComponentName(this, YouTubeAdAssistService.class).flattenToString();
++            String targetShort = new ComponentName(this, YouTubeAdAssistService.class).flattenToShortString();
++            for (String item : enabled.split(":")) {
++                if (item.equalsIgnoreCase(target) || item.equalsIgnoreCase(targetShort)) return true;
++            }
++        } catch (Exception ignored) {
++        }
++        return false;
++    }
++
+     private void openSettings(String action) {
+         try {
+             startActivity(new Intent(action));
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/Ui.java SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/Ui.java
+--- SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/Ui.java	2026-08-23 07:37:23.330552386 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/Ui.java	2026-08-23 08:35:50.165788879 +0000
+@@ -46,7 +46,7 @@
+     public static Button button(Context c, String label, boolean primary) {
+         Button b = new Button(c);
+         b.setText(label);
+-        b.setTextAllCaps(false);
++        b.setAllCaps(false);
+         b.setTextSize(15);
+         b.setTypeface(Typeface.create("sans", Typeface.BOLD));
+         b.setTextColor(c.getColor(primary ? R.color.app_bg : R.color.text_primary));
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java
+--- SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java	1970-01-01 00:00:00.000000000 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java	2026-08-23 08:35:50.161314212 +0000
+@@ -0,0 +1,174 @@
++package com.sameerali.samadshield;
++
++import android.accessibilityservice.AccessibilityService;
++import android.view.accessibility.AccessibilityEvent;
++import android.view.accessibility.AccessibilityNodeInfo;
++
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++import java.util.Locale;
++
++/**
++ * Event-driven YouTube helper.
++ *
++ * YouTube serves much of its advertising from the same first-party infrastructure
++ * used for normal video, so a DNS blocker cannot safely block those hosts without
++ * also breaking playback. This optional AccessibilityService uses a different,
++ * low-power approach: when YouTube itself exposes a real "Skip ad" control, the
++ * service clicks that control immediately. It does not modify YouTube, inspect TLS,
++ * read typed text, or perform continuous polling.
++ */
++public final class YouTubeAdAssistService extends AccessibilityService {
++    private static final String YOUTUBE_PACKAGE = "com.google.android.youtube";
++    private static final long MIN_SCAN_INTERVAL_MS = 120L;
++
++    private long lastScanMs = 0L;
++
++    private static final String[] SKIP_RESOURCE_IDS = {
++            "com.google.android.youtube:id/skip_ad_button",
++            "com.google.android.youtube:id/skip_ad_button_text",
++            "com.google.android.youtube:id/ad_skip_button",
++            "com.google.android.youtube:id/ad_skip_button_container",
++            "com.google.android.youtube:id/modern_skip_ad_button",
++            "com.google.android.youtube:id/skip_button"
++    };
++
++    private static final String[] CLOSE_RESOURCE_IDS = {
++            "com.google.android.youtube:id/ad_close_button",
++            "com.google.android.youtube:id/companion_ad_close_button",
++            "com.google.android.youtube:id/close_ad"
++    };
++
++    private static final List<String> SKIP_PHRASES = Arrays.asList(
++            "skip ad", "skip ads",
++            "saltar anuncio", "saltar anuncios",
++            "omitir anuncio", "omitir anuncios",
++            "anzeige überspringen", "anzeigen überspringen",
++            "passer l'annonce", "ignorer l'annonce",
++            "salta annuncio", "salta annunci",
++            "pular anúncio", "pular anúncios",
++            "広告をスキップ", "跳过广告", "跳過廣告"
++    );
++
++    private static final List<String> CLOSE_PHRASES = Arrays.asList(
++            "close ad", "close advertisement",
++            "cerrar anuncio", "fermer l'annonce",
++            "anzeige schließen", "chiudi annuncio",
++            "fechar anúncio", "広告を閉じる", "关闭广告", "關閉廣告"
++    );
++
++    @Override
++    public void onAccessibilityEvent(AccessibilityEvent event) {
++        if (event == null || event.getPackageName() == null) return;
++        if (!YOUTUBE_PACKAGE.contentEquals(event.getPackageName())) return;
++
++        long now = android.os.SystemClock.elapsedRealtime();
++        if (now - lastScanMs < MIN_SCAN_INTERVAL_MS) return;
++        lastScanMs = now;
++
++        AccessibilityNodeInfo root = getRootInActiveWindow();
++        if (root == null) return;
++
++        try {
++            if (clickKnownResource(root, SKIP_RESOURCE_IDS)) return;
++            if (clickPhrase(root, SKIP_PHRASES)) return;
++            if (clickKnownResource(root, CLOSE_RESOURCE_IDS)) return;
++            clickPhrase(root, CLOSE_PHRASES);
++        } finally {
++            root.recycle();
++        }
++    }
++
++    private boolean clickKnownResource(AccessibilityNodeInfo root, String[] ids) {
++        for (String id : ids) {
++            List<AccessibilityNodeInfo> nodes;
++            try {
++                nodes = root.findAccessibilityNodeInfosByViewId(id);
++            } catch (Exception ignored) {
++                continue;
++            }
++            if (nodes == null) continue;
++            for (AccessibilityNodeInfo node : nodes) {
++                try {
++                    if (clickNodeOrParent(node)) return true;
++                } finally {
++                    if (node != null) node.recycle();
++                }
++            }
++        }
++        return false;
++    }
++
++    private boolean clickPhrase(AccessibilityNodeInfo root, List<String> phrases) {
++        ArrayList<AccessibilityNodeInfo> stack = new ArrayList<>();
++        stack.add(root);
++        int visited = 0;
++
++        while (!stack.isEmpty() && visited < 300) {
++            AccessibilityNodeInfo node = stack.remove(stack.size() - 1);
++            visited++;
++
++            if (node != root && matches(node, phrases)) {
++                if (clickNodeOrParent(node)) return true;
++            }
++
++            int children = node.getChildCount();
++            for (int i = 0; i < children; i++) {
++                AccessibilityNodeInfo child = node.getChild(i);
++                if (child != null) stack.add(child);
++            }
++
++            if (node != root) node.recycle();
++        }
++
++        // Recycle anything left if the visit cap was reached.
++        for (AccessibilityNodeInfo node : stack) {
++            if (node != null && node != root) node.recycle();
++        }
++        return false;
++    }
++
++    private static boolean matches(AccessibilityNodeInfo node, List<String> phrases) {
++        String text = normalize(node.getText());
++        String desc = normalize(node.getContentDescription());
++        if (text.isEmpty() && desc.isEmpty()) return false;
++
++        for (String phrase : phrases) {
++            String p = phrase.toLowerCase(Locale.ROOT);
++            if (text.equals(p) || desc.equals(p) || text.contains(p) || desc.contains(p)) return true;
++        }
++        return false;
++    }
++
++    private static String normalize(CharSequence value) {
++        if (value == null) return "";
++        return value.toString().trim().toLowerCase(Locale.ROOT);
++    }
++
++    private static boolean clickNodeOrParent(AccessibilityNodeInfo node) {
++        AccessibilityNodeInfo current = node;
++        for (int depth = 0; current != null && depth < 5; depth++) {
++            if (current.isVisibleToUser() && current.isEnabled() && current.isClickable()) {
++                return current.performAction(AccessibilityNodeInfo.ACTION_CLICK);
++            }
++            AccessibilityNodeInfo parent = current.getParent();
++            if (current != node) current.recycle();
++            current = parent;
++        }
++        if (current != null && current != node) current.recycle();
++        return false;
++    }
++
++    @Override
++    public void onInterrupt() {
++        // No continuous work to stop; all behavior is event-driven.
++    }
++}
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/res/values/strings.xml SAM_Ad_Shield_v1.1.0/app/src/main/res/values/strings.xml
+--- SAM_Ad_Shield_v1.0.0/app/src/main/res/values/strings.xml	2026-08-23 07:33:58.783276561 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/res/values/strings.xml	2026-08-23 08:35:50.165650410 +0000
+@@ -3,4 +3,5 @@
+     <string name="app_name">SAM Ad Shield</string>
+     <string name="notification_channel_name">Ad blocking protection</string>
+     <string name="notification_channel_desc">Keeps the DNS-only ad blocking VPN active.</string>
++    <string name="youtube_assist_desc">Automatically taps YouTube Skip ad controls when YouTube makes them available. Event-driven and restricted to the YouTube app.</string>
+ </resources>
+diff -ruN SAM_Ad_Shield_v1.0.0/app/src/main/res/xml/youtube_ad_assist_service.xml SAM_Ad_Shield_v1.1.0/app/src/main/res/xml/youtube_ad_assist_service.xml
+--- SAM_Ad_Shield_v1.0.0/app/src/main/res/xml/youtube_ad_assist_service.xml	1970-01-01 00:00:00.000000000 +0000
++++ SAM_Ad_Shield_v1.1.0/app/src/main/res/xml/youtube_ad_assist_service.xml	2026-08-23 08:35:50.164314312 +0000
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
++    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
++    android:accessibilityFeedbackType="feedbackGeneric"
++    android:accessibilityFlags="flagReportViewIds"
++    android:canRetrieveWindowContent="true"
++    android:description="@string/youtube_assist_desc"
++    android:notificationTimeout="120"
++    android:packageNames="com.google.android.youtube" />
