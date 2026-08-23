@@ -81,6 +81,18 @@ jobs:
           grep -q 'DnsResolver.getInstance().rawQuery' SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/DnsVpnService.java
           test -f SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java
 
+      - name: Overlay v1.2.0 YouTube bypass and restricted-settings UX
+        shell: bash
+        run: |
+          cat .sam_v120_overlay.part01 \
+              .sam_v120_overlay.part02 \
+              .sam_v120_overlay.part03 | base64 --decode > sam_v120_overlay.tar.gz
+          echo "0eb5e279dd8aa4be1c4dcf8ff512ff6943651443222771fc222151719e6e6933  sam_v120_overlay.tar.gz" | sha256sum -c -
+          tar -xzf sam_v120_overlay.tar.gz -C SAM_Ad_Shield_v1.0.0
+          grep -q "versionName '1.2.0'" SAM_Ad_Shield_v1.0.0/app/build.gradle
+          grep -q 'android:canPerformGestures="true"' SAM_Ad_Shield_v1.0.0/app/src/main/res/xml/youtube_ad_assist_service.xml
+          grep -q 'Sponsored' SAM_Ad_Shield_v1.0.0/app/src/main/java/com/sameerali/samadshield/YouTubeAdAssistService.java
+
       - name: Install Android API 36
         shell: bash
         run: |
@@ -107,20 +119,20 @@ jobs:
       - name: Validate APK
         shell: bash
         run: |
-          cp SAM_Ad_Shield_v1.0.0/app/build/outputs/apk/debug/app-debug.apk SAM_Ad_Shield_v1.1.0.apk
-          test -s SAM_Ad_Shield_v1.1.0.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose SAM_Ad_Shield_v1.1.0.apk
-          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging SAM_Ad_Shield_v1.1.0.apk | tee /tmp/badging.txt
-          grep -q "versionName='1.1.0-debug'" /tmp/badging.txt
+          cp SAM_Ad_Shield_v1.0.0/app/build/outputs/apk/debug/app-debug.apk SAM_Ad_Shield_v1.2.0.apk
+          test -s SAM_Ad_Shield_v1.2.0.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose SAM_Ad_Shield_v1.2.0.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging SAM_Ad_Shield_v1.2.0.apk | tee /tmp/badging.txt
+          grep -q "versionName='1.2.0-debug'" /tmp/badging.txt
           grep -q "package: name='com.sameerali.samadshield.debug'" /tmp/badging.txt
-          sha256sum SAM_Ad_Shield_v1.1.0.apk > SAM_Ad_Shield_v1.1.0.apk.sha256
+          sha256sum SAM_Ad_Shield_v1.2.0.apk > SAM_Ad_Shield_v1.2.0.apk.sha256
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: SAM_Ad_Shield_v1.1.0
+          name: SAM_Ad_Shield_v1.2.0
           if-no-files-found: error
           retention-days: 7
           path: |
-            SAM_Ad_Shield_v1.1.0.apk
-            SAM_Ad_Shield_v1.1.0.apk.sha256
+            SAM_Ad_Shield_v1.2.0.apk
+            SAM_Ad_Shield_v1.2.0.apk.sha256
