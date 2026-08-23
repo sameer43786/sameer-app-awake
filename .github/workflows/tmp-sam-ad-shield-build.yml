@@ -36,7 +36,22 @@ jobs:
         shell: bash
         run: |
           cat .sam_ad_shield_src.part01 \
-              .sam_ad_shield_src.part02 \
+              .sam_ad_shield_src.part02_01 \
+              .sam_ad_shield_src.part02_02 \
+              .sam_ad_shield_src.part02_03 \
+              .sam_ad_shield_src.part02_04 \
+              .sam_ad_shield_src.part02_05 \
+              .sam_ad_shield_src.part02_06 \
+              .sam_ad_shield_src.part02_07 \
+              .sam_ad_shield_src.part02_08 \
+              .sam_ad_shield_src.part02_09 \
+              .sam_ad_shield_src.part02_10 \
+              .sam_ad_shield_src.part02_11 \
+              .sam_ad_shield_src.part02_12 \
+              .sam_ad_shield_src.part02_13 \
+              .sam_ad_shield_src.part02_14 \
+              .sam_ad_shield_src.part02_15 \
+              .sam_ad_shield_src.part02_16 \
               .sam_ad_shield_src.part03 \
               .sam_ad_shield_src.part04 \
               .sam_ad_shield_src.part05_01 \
