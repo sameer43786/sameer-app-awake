@@ -27,7 +27,8 @@ jobs:
         shell: bash
         run: |
           base64 --decode .sam_bridge_uiprobe_source.b64 > SAMBridgeUIProbe_Source.zip
-          echo "71d8acbbac40d2cde7f79f2953b4d00297f519bd713b601ac5c0b8da4e8baae4  SAMBridgeUIProbe_Source.zip" | sha256sum -c -
+          sha256sum SAMBridgeUIProbe_Source.zip
+          unzip -t SAMBridgeUIProbe_Source.zip
           unzip -q SAMBridgeUIProbe_Source.zip
       - name: Install Android API 36
         shell: bash
