@@ -30,7 +30,7 @@ jobs:
           gradle-version: '8.13'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Reconstruct verified v1.0 source
         shell: bash
