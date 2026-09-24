@@ -1,9 +1,9 @@
 package com.sameerali.appawake;
 
 /**
- * Dependency-free JVM checks for foreground-event ordering.
+ * Dependency-free JVM checks for foreground-event ordering and safe release behavior.
  *
- * <p>Run through tools/run_core_tests.sh from the project root.</p>
+ * <p>By: Sameer Ali | Contact: sameer43786@gmail.com</p>
  */
 public final class ForegroundAppTrackerTest {
 
@@ -20,26 +20,44 @@ public final class ForegroundAppTrackerTest {
                 "Reader must become current");
 
         assertFalse(tracker.recordResumed("com.example.old", 900L),
-                "An older overlapping query event must be ignored");
-        assertEquals("com.example.reader", tracker.currentPackage(),
-                "Older events must not replace newer state");
+                "Older foreground events must be ignored");
+
+        assertFalse(tracker.recordPaused("com.example.unrelated", 1_050L),
+                "Unrelated background events must not clear active state");
+        assertEquals(1_000L, tracker.latestTimestampMs(),
+                "Unrelated pause must not advance ordering state");
 
         assertFalse(tracker.recordResumed("com.example.reader", 1_100L),
-                "A newer duplicate for the same package is not a package change");
+                "Same-package resume is not a package change");
         assertEquals(1_100L, tracker.latestTimestampMs(),
-                "A same-package event must still advance the ordering timestamp");
+                "Same-package resume must advance timestamp");
 
-        assertTrue(tracker.recordResumed("com.example.maps", 1_200L),
-                "A newer package must replace the current package");
+        assertTrue(tracker.recordPaused("com.example.reader", 1_200L),
+                "Active package pause must be recorded");
+        assertEquals("", tracker.currentPackage(),
+                "Paused selected app must immediately stop being foreground");
+
+        assertFalse(tracker.recordVisible("com.example.reader", 1_200L),
+                "Equal-timestamp fallback must not revive a paused app");
+        assertEquals("", tracker.currentPackage(),
+                "Explicit pause must win at the same timestamp");
+
+        assertTrue(tracker.recordVisible("com.example.maps", 1_300L),
+                "Strictly newer visibility fallback may seed foreground state");
         assertEquals("com.example.maps", tracker.currentPackage(),
-                "Maps must become current");
+                "Maps must become current through fallback");
 
-        assertFalse(tracker.recordResumed(null, 1_300L),
-                "Null package events must be ignored");
-        assertFalse(tracker.recordResumed("   ", 1_400L),
-                "Blank package events must be ignored");
+        assertTrue(tracker.recordResumed("com.example.chrome", 1_400L),
+                "Newer lifecycle resume must replace fallback state");
+        assertEquals("com.example.chrome", tracker.currentPackage(),
+                "Chrome must become current");
 
-        System.out.println("PASS: ForegroundAppTracker ordering and validation checks");
+        tracker.clear();
+        assertEquals("", tracker.currentPackage(), "Clear must reset foreground state");
+        assertEquals(Long.MIN_VALUE, tracker.latestTimestampMs(),
+                "Clear must reset timestamp state");
+
+        System.out.println("PASS: ForegroundAppTracker selective foreground/release checks");
     }
 
     private static void assertTrue(boolean value, String message) {
